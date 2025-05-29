@@ -250,6 +250,11 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                                     valid = ~np.isnan(x) & ~np.isnan(y)
                                     x_fit = np.array(x[valid], dtype=float)
                                     y_fit = np.array(y[valid], dtype=float)
+
+                                    post_cycle_10 = x_clean >= 10
+                                    x_fit = x_clean[post_cycle_10]
+                                    y_fit = y_clean[post_cycle_10]
+                                    
                                     if len(x_fit) >= 5:  # ensure enough points to fit
                                         popt, _ = curve_fit(four_param_logistic, x_fit, y_fit, maxfev=10000)
                                         ct = inverse_four_pl(threshold_value, *popt)
@@ -271,6 +276,7 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                                             # )
                                 except:
                                     above = y > threshold_value
+                                    
                                     if any(above):
                                         first_cross = above.idxmax()
                                         if first_cross > 0:
@@ -341,6 +347,11 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                                 valid = ~np.isnan(x) & ~np.isnan(y)
                                 x_fit = np.array(x[valid], dtype=float)
                                 y_fit = np.array(y[valid], dtype=float)
+
+                                post_cycle_10 = x_clean >= 10
+                                x_fit = x_clean[post_cycle_10]
+                                y_fit = y_clean[post_cycle_10]
+                                
                                 if len(x_fit) >= 5:  # ensure enough points to fit
                                     popt, _ = curve_fit(four_param_logistic, x_fit, y_fit, maxfev=10000)                                 
                                     ct = inverse_four_pl(threshold_value, *popt)
