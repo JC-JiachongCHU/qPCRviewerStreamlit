@@ -277,9 +277,9 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                                     x_fit = np.array(x[valid], dtype=float)
                                     y_fit = np.array(y[valid], dtype=float)
 
-                                    post_cycle_10 = x_clean >= 10
-                                    x_fit = x_clean[post_cycle_10]
-                                    y_fit = y_clean[post_cycle_10]
+                                    post_cycle_10 = x_fit >= 10
+                                    x_fit = x_fit[post_cycle_10]
+                                    y_fit = y_fit[post_cycle_10]
                                     
                                     if len(x_fit) >= 5:  # ensure enough points to fit
                                         popt, _ = curve_fit(four_param_logistic, x_fit, y_fit, maxfev=10000)
@@ -387,9 +387,9 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                                 x_fit = np.array(x[valid], dtype=float)
                                 y_fit = np.array(y[valid], dtype=float)
 
-                                post_cycle_10 = x_clean >= 10
-                                x_fit = x_clean[post_cycle_10]
-                                y_fit = y_clean[post_cycle_10]
+                                post_cycle_10 = x_fit >= 10
+                                x_fit = x_fit[post_cycle_10]
+                                y_fit = y_fit[post_cycle_10]
                                 
                                 if len(x_fit) >= 5:  # ensure enough points to fit
                                     popt, _ = curve_fit(four_param_logistic, x_fit, y_fit, maxfev=10000)                                 
