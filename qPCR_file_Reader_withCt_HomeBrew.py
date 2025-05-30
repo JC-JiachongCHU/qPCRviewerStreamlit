@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.colors as mcolors
+import matplotlib.pyplot as plt  
+import matplotlib.cm as cm       
 import plotly.graph_objects as go
 import os
 import numpy as np
@@ -141,8 +143,19 @@ else:
     st.info("No groups available to delete.")
 
 # Plot settings
-st.sidebar.subheader("Plot Settings")
-color_mode = st.sidebar.radio("Color mode", ["Solid", "Gradient"])
+# st.sidebar.subheader("Plot Settings")
+# color_mode = st.sidebar.radio("Color mode", ["Solid", "Gradient"])
+
+st.sidebar.subheader("Plot Color Scheme")
+color_mode = st.sidebar.radio("Color Mode", ["Solid", "Gradient", "Colormap"])
+
+colormap_name = None
+if color_mode == "Colormap":
+    available_colormaps = sorted(m for m in plt.colormaps() if not m.endswith("_r"))  # Optional: filter out reversed
+    colormap_name = st.sidebar.selectbox(
+        "Select a Colormap", ["jet", "viridis", "plasma", "cividis", "cool", "hot", "spring", "summer", "winter"]
+    )
+
 if platform == "QuantStudio (QS)":
     channel_options = [str(i) for i in range(1, 13)]
     default_channels = ["1", "2"]
@@ -202,11 +215,24 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
         for group, info in st.session_state["groups"].items():
             wells = info["wells"]
             base_color = info["color"]
-            color_list = [base_color] * len(wells) if color_mode == "Solid" else [
-                mcolors.LinearSegmentedColormap.from_list("gradient", [
+            # color_list = [base_color] * len(wells) if color_mode == "Solid" else [
+            #     mcolors.LinearSegmentedColormap.from_list("gradient", [
+            #         tuple(1 - 0.5 * (1 - c) for c in mcolors.to_rgb(base_color)), mcolors.to_rgb(base_color)
+            #     ])(i / max(1, len(wells) - 1)) for i in range(len(wells))
+            # ]
+            if color_mode == "Solid":
+                color_list = [base_color] * len(wells)
+            elif color_mode == "Gradient":
+                gradient = mcolors.LinearSegmentedColormap.from_list("gradient", [
                     tuple(1 - 0.5 * (1 - c) for c in mcolors.to_rgb(base_color)), mcolors.to_rgb(base_color)
-                ])(i / max(1, len(wells) - 1)) for i in range(len(wells))
-            ]
+                ])
+                color_list = [gradient(i / max(1, len(wells) - 1)) for i in range(len(wells))]
+            elif color_mode == "Colormap" and colormap_name:
+                cmap = plt.get_cmap(colormap_name)
+                color_list = [mcolors.to_hex(cmap(i / max(1, len(wells) - 1))) for i in range(len(wells))]
+            else:
+                color_list = [base_color] * len(wells)
+            
 
             for well, color in zip(wells, color_list):
                 if well in df["Well Position"].values:
@@ -307,11 +333,24 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
             for group, info in st.session_state["groups"].items():
                 wells = info["wells"]
                 base_color = info["color"]
-                color_list = [base_color] * len(wells) if color_mode == "Solid" else [
-                    mcolors.LinearSegmentedColormap.from_list("gradient", [
+                # color_list = [base_color] * len(wells) if color_mode == "Solid" else [
+                #     mcolors.LinearSegmentedColormap.from_list("gradient", [
+                #         tuple(1 - 0.5 * (1 - c) for c in mcolors.to_rgb(base_color)), mcolors.to_rgb(base_color)
+                #     ])(j / max(1, len(wells) - 1)) for j in range(len(wells))
+                # ]
+                if color_mode == "Solid":
+                    color_list = [base_color] * len(wells)
+                elif color_mode == "Gradient":
+                    gradient = mcolors.LinearSegmentedColormap.from_list("gradient", [
                         tuple(1 - 0.5 * (1 - c) for c in mcolors.to_rgb(base_color)), mcolors.to_rgb(base_color)
-                    ])(j / max(1, len(wells) - 1)) for j in range(len(wells))
-                ]
+                    ])
+                    color_list = [gradient(i / max(1, len(wells) - 1)) for i in range(len(wells))]
+                elif color_mode == "Colormap" and colormap_name:
+                    cmap = plt.get_cmap(colormap_name)
+                    color_list = [mcolors.to_hex(cmap(i / max(1, len(wells) - 1))) for i in range(len(wells))]
+                else:
+                    color_list = [base_color] * len(wells)
+                
 
                 for well, color in zip(wells, color_list):
                     if well in df.columns:
