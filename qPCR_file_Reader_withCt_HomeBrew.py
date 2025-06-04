@@ -569,7 +569,46 @@ if enable_debug_heatmap:
     debug_cycle_count = st.sidebar.number_input("Number of Cycles to Average", min_value=1, max_value=100, value=20)
 
     # Initialize plate layout
-    heatmap_matrix = pd.DataFrame(np.nan, index=rows, columns=cols)
+    # heatmap_matrix = pd.DataFrame(np.nan, index=rows, columns=cols)
+    # Auto-detect plate layout from well names
+    if platform == "Bio-Rad" and uploaded_files:
+        match_key = channel_name_map.get(debug_channel, debug_channel.lower())
+        matched_file = next((f for f in uploaded_files if match_key.lower() in f.name.lower()), None)
+        if matched_file:
+            df = pd.read_csv(matched_file)
+            df.columns = df.columns.str.strip()
+            df = df.loc[:, ~df.columns.str.contains("Unnamed")]
+    
+            detected_wells = [c for c in df.columns if isinstance(c, str) and len(c) >= 2 and c[0].isalpha() and c[1:].isdigit()]
+            rows_used = sorted(set(w[0] for w in detected_wells))
+            cols_used = sorted(set(int(w[1:]) for w in detected_wells))
+            
+            heatmap_matrix = pd.DataFrame(np.nan, index=rows_used, columns=cols_used)
+    elif platform == "QuantStudio (QS)" and uploaded_files:
+        df = pd.read_excel(uploaded_files[0][1]) if uploaded_files[0][1].name.endswith("xlsx") else pd.read_csv(uploaded_files[0][1])
+        df = df[df["Well Position"] != "Well Position"]
+        df.iloc[:, 5:] = df.iloc[:, 5:].apply(pd.to_numeric, errors='coerce')
+        rfu_cols = [col for col in df.columns if col.startswith("X")]
+        debug_chan_idx = int(debug_channel) - 1
+    
+        # Auto-detect actual wells used
+        detected_wells = df["Well Position"].unique()
+        rows_used = sorted(set(w[0] for w in detected_wells if isinstance(w, str) and len(w) >= 2))
+        cols_used = sorted(set(int(w[1:]) for w in detected_wells if isinstance(w, str) and w[1:].isdigit()))
+        heatmap_matrix = pd.DataFrame(np.nan, index=rows_used, columns=cols_used)
+    
+        for well in detected_wells:
+            if not isinstance(well, str) or len(well) < 2:
+                continue
+            sub_df = df[df["Well Position"] == well].sort_values(by=df.columns[1])  # cycle column
+            if debug_chan_idx < len(rfu_cols):
+                y = sub_df[rfu_cols[debug_chan_idx]].iloc[:debug_cycle_count]
+                avg_val = y.mean()
+                r, c = well[0], int(well[1:])
+                if r in heatmap_matrix.index and c in heatmap_matrix.columns:
+                    heatmap_matrix.loc[r, c] = avg_val
+
+
 
     if platform == "QuantStudio (QS)" and uploaded_files:
         df = pd.read_excel(uploaded_files[0][1]) if uploaded_files[0][1].name.endswith("xlsx") else pd.read_csv(uploaded_files[0][1])
