@@ -160,7 +160,7 @@ if platform == "QuantStudio (QS)":
     channel_options = [str(i) for i in range(1, 13)]
     default_channels = ["1", "2"]
 else:
-    channel_options = ["FAM", "HEX", "Cy5", "Cy5.5", "ROX"]
+    channel_options = ["FAM", "HEX", "Cy5", "Cy5.5", "ROX", "SYBR"]
     default_channels = ["FAM", "HEX"]
     
 selected_channels = st.sidebar.multiselect("Select Channels to Plot", channel_options, default=default_channels)
@@ -183,7 +183,8 @@ channel_name_map = {
     "HEX": "HEX",
     "Cy5": "Cy5",
     "Cy5.5": "Cy5-5",
-    "ROX": "ROX"
+    "ROX": "ROX",
+    "SYBR": "SYBR"
 }
 
 channel_styles = [
