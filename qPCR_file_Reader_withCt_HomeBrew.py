@@ -332,6 +332,8 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                 continue
 
             df = pd.read_csv(matched_file)
+            df.columns = df.columns.str.strip()
+            df = df.loc[:, ~df.columns.str.contains("Unnamed")]
 
             for group, info in st.session_state["groups"].items():
                 wells = info["wells"]
