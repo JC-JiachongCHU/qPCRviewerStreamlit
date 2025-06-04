@@ -625,7 +625,7 @@ if enable_debug_heatmap:
         for j in range(len(cols)):
             value = heatmap_matrix.iloc[i, j]
             if not np.isnan(value):
-                ax.text(j, i, f"{value:.1f}", ha="center", va="center", color="white" if value > np.nanmax(heatmap_matrix.values)/2 else "black", fontsize=8)
+                ax.text(j, i, f"{value:.1f}", ha="center", va="center", color="white" if value > np.nanmax(heatmap_matrix.values)/2 else "black", fontsize=5)
 
     ax.set_title(f"Average RFU (First {debug_cycle_count} Cycles) - {debug_channel}")
     fig.colorbar(im, ax=ax)
