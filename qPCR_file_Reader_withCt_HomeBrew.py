@@ -552,3 +552,69 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
             file_name=f"Ct_Results_{version}_plate_layout.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+
+# ------------------------
+# Debug Section - Heatmap
+# ------------------------
+st.sidebar.subheader("[Debug] Heatmap")
+enable_debug_heatmap = st.sidebar.checkbox("Enable Heatmap Debug Mode")
+if enable_debug_heatmap:
+    st.subheader("Debug Heatmap of Average Fluorescence")
+
+    debug_channel = st.sidebar.selectbox("Select Channel for Heatmap", channel_options)
+    debug_cycle_count = st.sidebar.number_input("Number of Cycles to Average", min_value=1, max_value=100, value=20)
+
+    # Initialize plate layout
+    heatmap_matrix = pd.DataFrame(np.nan, index=rows, columns=cols)
+
+    if platform == "QuantStudio (QS)" and uploaded_files:
+        df = pd.read_excel(uploaded_files[0][1]) if uploaded_files[0][1].name.endswith("xlsx") else pd.read_csv(uploaded_files[0][1])
+        df = df[df["Well Position"] != "Well Position"]
+        df.iloc[:, 5:] = df.iloc[:, 5:].apply(pd.to_numeric, errors='coerce')
+        rfu_cols = [col for col in df.columns if col.startswith("X")]
+        debug_chan_idx = int(debug_channel) - 1
+
+        for well in df["Well Position"].unique():
+            sub_df = df[df["Well Position"] == well].sort_values(by=df.columns[1])  # cycle column
+            if debug_chan_idx < len(rfu_cols):
+                y = sub_df[rfu_cols[debug_chan_idx]].iloc[:debug_cycle_count]
+                avg_val = y.mean()
+                r, c = well[0], int(well[1:])
+                if r in heatmap_matrix.index and c in heatmap_matrix.columns:
+                    heatmap_matrix.loc[r, c] = avg_val
+
+    elif platform == "Bio-Rad" and uploaded_files:
+        match_key = channel_name_map.get(debug_channel, debug_channel.lower())
+        matched_file = next((f for f in uploaded_files if match_key.lower() in f.name.lower()), None)
+        if matched_file:
+            df = pd.read_csv(matched_file)
+            for well in df.columns:
+                if well.lower() in ["cycle", "cycles"]:
+                    continue
+                y = df[well].iloc[:debug_cycle_count]
+                avg_val = y.mean()
+                r, c = well[0], int(well[1:])
+                if r in heatmap_matrix.index and c in heatmap_matrix.columns:
+                    heatmap_matrix.loc[r, c] = avg_val
+
+    # Plot heatmap
+    fig, ax = plt.subplots(figsize=(12, 6) if plate_type == "96-well" else (18, 8))
+    im = ax.imshow(heatmap_matrix.values.astype(float), cmap='viridis', aspect='auto')
+
+    # Set labels
+    ax.set_xticks(np.arange(len(cols)))
+    ax.set_yticks(np.arange(len(rows)))
+    ax.set_xticklabels(cols)
+    ax.set_yticklabels(rows)
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+
+    for i in range(len(rows)):
+        for j in range(len(cols)):
+            value = heatmap_matrix.iloc[i, j]
+            if not np.isnan(value):
+                ax.text(j, i, f"{value:.1f}", ha="center", va="center", color="white" if value > np.nanmax(heatmap_matrix.values)/2 else "black", fontsize=8)
+
+    ax.set_title(f"Average RFU (First {debug_cycle_count} Cycles) - {debug_channel}")
+    fig.colorbar(im, ax=ax)
+    st.pyplot(fig)
