@@ -595,7 +595,13 @@ if enable_debug_heatmap:
                     continue
                 y = df[well].iloc[:debug_cycle_count]
                 avg_val = y.mean()
-                r, c = well[0], int(well[1:])
+                # r, c = well[0], int(well[1:])
+                if isinstance(well, str) and len(well) >= 2 and well[0].isalpha() and well[1:].isdigit():
+                    r, c = well[0], int(well[1:])
+                    if r in heatmap_matrix.index and c in heatmap_matrix.columns:
+                        heatmap_matrix.loc[r, c] = avg_val
+                else:
+                    st.warning(f"Invalid well name skipped: {well}")
                 if r in heatmap_matrix.index and c in heatmap_matrix.columns:
                     heatmap_matrix.loc[r, c] = avg_val
 
