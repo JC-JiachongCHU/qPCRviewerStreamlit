@@ -583,6 +583,8 @@ if enable_debug_heatmap:
 
     # Plot heatmap
     # Set up figure with square cells
+    rows_used = list(heatmap_matrix.index)
+    cols_used = list(heatmap_matrix.columns)
     n_rows, n_cols = len(rows_used), len(cols_used)
     cell_size = 0.6  # adjust as needed for display size
     fig, ax = plt.subplots(figsize=(n_cols * cell_size, n_rows * cell_size))
