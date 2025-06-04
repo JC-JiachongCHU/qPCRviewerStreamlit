@@ -608,8 +608,11 @@ if enable_debug_heatmap:
                     heatmap_matrix.loc[r, c] = avg_val
 
     # Plot heatmap
-    fig, ax = plt.subplots(figsize=(12, 6) if plate_type == "96-well" else (18, 8))
-    im = ax.imshow(heatmap_matrix.values.astype(float), cmap='viridis', aspect='auto')
+    # Set up figure with square cells
+    n_rows, n_cols = len(rows), len(cols)
+    cell_size = 0.6  # adjust as needed for display size
+    fig, ax = plt.subplots(figsize=(n_cols * cell_size, n_rows * cell_size))
+    im = ax.imshow(heatmap_matrix.values.astype(float), cmap='viridis', aspect='equal')
 
     # Set labels
     ax.set_xticks(np.arange(len(cols)))
