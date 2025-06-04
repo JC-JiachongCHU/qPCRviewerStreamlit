@@ -524,8 +524,7 @@ if enable_debug_heatmap:
     debug_channel = st.sidebar.selectbox("Select Channel for Heatmap", channel_options)
     debug_cycle_count = st.sidebar.number_input("Number of Cycles to Average", min_value=1, max_value=100, value=20)
 
-    # Initialize plate layout
-    heatmap_matrix = pd.DataFrame(np.nan, index=rows, columns=cols)
+
     
 
 
@@ -533,6 +532,12 @@ if enable_debug_heatmap:
 
 
     if platform == "QuantStudio (QS)" and uploaded_files:
+        # Initialize plate layout
+        detected_wells = df["Well Position"].dropna().unique()
+        rows_used = sorted(set(w[0] for w in detected_wells if isinstance(w, str)))
+        cols_used = sorted(set(int(w[1:]) for w in detected_wells if isinstance(w, str) and w[1:].isdigit()))
+        heatmap_matrix = pd.DataFrame(np.nan, index=rows_used, columns=cols_used)
+
         df = pd.read_excel(uploaded_files[0][1]) if uploaded_files[0][1].name.endswith("xlsx") else pd.read_csv(uploaded_files[0][1])
         df = df[df["Well Position"] != "Well Position"]
         df.iloc[:, 5:] = df.iloc[:, 5:].apply(pd.to_numeric, errors='coerce')
@@ -549,6 +554,12 @@ if enable_debug_heatmap:
                     heatmap_matrix.loc[r, c] = avg_val
 
     elif platform == "Bio-Rad" and uploaded_files:
+        # Initialize plate layout
+        detected_wells = [c for c in df.columns if isinstance(c, str) and len(c) >= 2 and c[0].isalpha() and c[1:].isdigit()]
+        rows_used = sorted(set(w[0] for w in detected_wells if isinstance(w, str)))
+        cols_used = sorted(set(int(w[1:]) for w in detected_wells if isinstance(w, str) and w[1:].isdigit()))
+        heatmap_matrix = pd.DataFrame(np.nan, index=rows_used, columns=cols_used)
+        
         match_key = channel_name_map.get(debug_channel, debug_channel.lower())
         matched_file = next((f for f in uploaded_files if match_key.lower() in f.name.lower()), None)
         if matched_file:
@@ -572,7 +583,7 @@ if enable_debug_heatmap:
 
     # Plot heatmap
     # Set up figure with square cells
-    n_rows, n_cols = len(rows), len(cols)
+    n_rows, n_cols = len(rows_used), len(cols_used)
     cell_size = 0.6  # adjust as needed for display size
     fig, ax = plt.subplots(figsize=(n_cols * cell_size, n_rows * cell_size))
     im = ax.imshow(heatmap_matrix.values.astype(float), cmap='viridis', aspect='equal')
