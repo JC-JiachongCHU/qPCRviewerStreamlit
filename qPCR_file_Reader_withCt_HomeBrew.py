@@ -315,12 +315,14 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
 
 
     
-    else:
+    else:   # Biorad
         rox_df = None
         if normalize_to_rox:
             rox_file = next((f for f in uploaded_files if "rox" in f.name.lower()), None)
             if rox_file:
-                rox_df = pd.read_csv(rox_file)  
+                rox_df = pd.read_csv(rox_file)
+                rox_df.columns = rox_df.columns.str.strip()  # remove leading/trailing spaces
+                rox_df = rox_df.loc[:, ~df.columns.str.contains("Unnamed")]  # remove unnamed index cols
         for i, channel_name in enumerate(selected_channels):
             chan_str = channel_name 
             match_key = channel_name_map.get(channel_name, channel_name.lower())
