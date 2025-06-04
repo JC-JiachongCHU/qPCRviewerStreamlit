@@ -594,6 +594,8 @@ if enable_debug_heatmap:
         matched_file = next((f for f in uploaded_files if match_key.lower() in f.name.lower()), None)
         if matched_file:
             df = pd.read_csv(matched_file)
+            df.columns = df.columns.str.strip()
+            df = df.loc[:, ~df.columns.str.contains("Unnamed")]
             for well in df.columns:
                 if well.lower() in ["cycle", "cycles"]:
                     continue
