@@ -441,50 +441,6 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
 
     st.plotly_chart(fig, use_container_width=False)
     
-    # if ct_results:
-    #     st.subheader("Ct Values")
-    #     st.dataframe(pd.DataFrame(ct_results))
-    #     file_name = f"Ct_Results_{version}.csv"
-    #     st.download_button(
-    #         label="Download Ct Results as CSV",
-    #         data=pd.DataFrame(ct_results).to_csv(index=False),
-    #         file_name=file_name,
-    #         mime="text/csv"
-    #     )
-    
-    # if ct_results:
-    #     st.subheader("Ct Values")
-    #     ct_df = pd.DataFrame(ct_results)
-    #     st.dataframe(ct_df)
-    #     # Create Excel file
-    #     output = io.BytesIO()
-    #     writer = pd.ExcelWriter(output, engine='openpyxl')
-    
-    #     plate_rows = ["A", "B", "C", "D", "E", "F", "G", "H"] if plate_type == "96-well" else [chr(i) for i in range(ord("A"), ord("P")+1)]
-    #     plate_cols = list(range(1, 13)) if plate_type == "96-well" else list(range(1, 25))
-    
-    #     for channel in ct_df["Channel"].unique():
-    #             plate_matrix = pd.DataFrame(index=plate_rows, columns=plate_cols)
-        
-    #             channel_df = ct_df[ct_df["Channel"] == channel]
-    #             for _, row in channel_df.iterrows():
-    #                 well = row["Well"]
-    #                 r, c = well[0], int(well[1:])
-    #                 if r in plate_matrix.index and c in plate_matrix.columns:
-    #                     plate_matrix.at[r, c] = row["Ct"]
-        
-    #             plate_matrix.sort_index(axis=1, inplace=True)
-    #             plate_matrix.to_excel(writer, sheet_name=str(channel))
-    
-    #     writer.close()
-    #     output.seek(0)
-    
-    #     st.download_button(
-    #             label="Download Ct Results as XLSX (Plate Layout)",
-    #             data=output,
-    #             file_name=f"Ct_Results_{version}_plate_layout.xlsx",
-    #             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    #         )
 
     
     if ct_results:
@@ -569,44 +525,10 @@ if enable_debug_heatmap:
     debug_cycle_count = st.sidebar.number_input("Number of Cycles to Average", min_value=1, max_value=100, value=20)
 
     # Initialize plate layout
-    # heatmap_matrix = pd.DataFrame(np.nan, index=rows, columns=cols)
-    # Auto-detect plate layout from well names
-    if platform == "Bio-Rad" and uploaded_files:
-        match_key = channel_name_map.get(debug_channel, debug_channel.lower())
-        matched_file = next((f for f in uploaded_files if match_key.lower() in f.name.lower()), None)
-        if matched_file:
-            df = pd.read_csv(matched_file)
-            df.columns = df.columns.str.strip()
-            df = df.loc[:, ~df.columns.str.contains("Unnamed")]
+    heatmap_matrix = pd.DataFrame(np.nan, index=rows, columns=cols)
     
-            detected_wells = [c for c in df.columns if isinstance(c, str) and len(c) >= 2 and c[0].isalpha() and c[1:].isdigit()]
-            rows_used = sorted(set(w[0] for w in detected_wells))
-            cols_used = sorted(set(int(w[1:]) for w in detected_wells))
-            
-            heatmap_matrix = pd.DataFrame(np.nan, index=rows_used, columns=cols_used)
-    elif platform == "QuantStudio (QS)" and uploaded_files:
-        df = pd.read_excel(uploaded_files[0][1]) if uploaded_files[0][1].name.endswith("xlsx") else pd.read_csv(uploaded_files[0][1])
-        df = df[df["Well Position"] != "Well Position"]
-        df.iloc[:, 5:] = df.iloc[:, 5:].apply(pd.to_numeric, errors='coerce')
-        rfu_cols = [col for col in df.columns if col.startswith("X")]
-        debug_chan_idx = int(debug_channel) - 1
-    
-        # Auto-detect actual wells used
-        detected_wells = df["Well Position"].unique()
-        rows_used = sorted(set(w[0] for w in detected_wells if isinstance(w, str) and len(w) >= 2))
-        cols_used = sorted(set(int(w[1:]) for w in detected_wells if isinstance(w, str) and w[1:].isdigit()))
-        heatmap_matrix = pd.DataFrame(np.nan, index=rows_used, columns=cols_used)
-    
-        for well in detected_wells:
-            if not isinstance(well, str) or len(well) < 2:
-                continue
-            sub_df = df[df["Well Position"] == well].sort_values(by=df.columns[1])  # cycle column
-            if debug_chan_idx < len(rfu_cols):
-                y = sub_df[rfu_cols[debug_chan_idx]].iloc[:debug_cycle_count]
-                avg_val = y.mean()
-                r, c = well[0], int(well[1:])
-                if r in heatmap_matrix.index and c in heatmap_matrix.columns:
-                    heatmap_matrix.loc[r, c] = avg_val
+
+
 
 
 
