@@ -484,9 +484,9 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
 
     if threshold_enabled:
         for ch in selected_channels:
-        channel_threshold = per_channel_thresholds.get(ch, 1000.0)  # fallback default
-        fig.add_hline(y=channel_threshold, line_dash="dot", line_color="gray",
-                      annotation_text=f"{ch} Threshold", annotation_position="top right")
+            channel_threshold = per_channel_thresholds.get(ch, 1000.0)  # fallback default
+            fig.add_hline(y=channel_threshold, line_dash="dot", line_color="gray",
+                          annotation_text=f"{ch} Threshold", annotation_position="top right")
     
     fig.update_layout(
         title="Amplification Curves",
