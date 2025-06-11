@@ -343,7 +343,31 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                 continue
 
             df = pd.read_csv(matched_file)
+            df.columns = df.columns.str.strip()
+            df = df.loc[:, ~df.columns.str.contains("Unnamed")]
 
+             # ======= DECONVOLUTION: Load correction file ONCE here =======
+                df_corr = None
+                if enable_deconvolution and channel_name == deconv_target_channel:
+                    match_key_corr = channel_name_map.get(deconv_correction_channel, deconv_correction_channel.lower())
+                    corr_file = next((f for f in uploaded_files if match_key_corr.lower() in f.name.lower()), None)
+                    if corr_file:
+                        try:
+                            df_corr = pd.read_csv(corr_file, comment='#')
+                            df_corr.columns = df_corr.columns.str.strip()
+                            df_corr = df_corr.loc[:, ~df_corr.columns.str.contains("Unnamed")]
+            
+                            if df_corr.empty:
+                                st.warning(f"Correction file '{corr_file.name}' is empty. Deconvolution skipped for channel {channel_name}.")
+                                df_corr = None
+                            elif (df_corr.drop(columns='Cycle', errors='ignore').sum().sum() == 0):
+                                st.warning(f"Correction file '{corr_file.name}' has all-zero data. Deconvolution skipped for channel {channel_name}.")
+                                df_corr = None
+                        except pd.errors.EmptyDataError:
+                            st.warning(f"Correction file '{corr_file.name}' is empty or invalid. Deconvolution skipped for channel {channel_name}.")
+                            df_corr = None
+                    else:
+                        st.warning(f"Correction channel file not found: {deconv_correction_channel}")
 
             for group, info in st.session_state["groups"].items():
                 wells = info["wells"]
@@ -366,44 +390,6 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                 for well, color in zip(wells, color_list):
                     if well in df.columns:
                         y = df[well].copy()
-
-                        # ---- DECONVOLUTION ----
-                        if enable_deconvolution and channel_name == deconv_target_channel:
-                            # Load correction channel ONCE
-                            match_key_corr = channel_name_map.get(deconv_correction_channel, deconv_correction_channel.lower())
-                            corr_file = next((f for f in uploaded_files if match_key_corr.lower() in f.name.lower()), None)
-                            df_corr = None
-                            if corr_file:
-                                try:
-                                    df_corr = pd.read_csv(corr_file, comment='#')
-                                    df_corr.columns = df_corr.columns.str.strip()
-                                    df_corr = df_corr.loc[:, ~df_corr.columns.str.contains("Unnamed")]
-                        
-                                    if df_corr.empty:
-                                        st.warning(f"Correction file '{corr_file.name}' is empty. Deconvolution skipped for channel {channel_name}.")
-                                        df_corr = None
-                                    elif (df_corr.drop(columns='Cycle', errors='ignore').sum().sum() == 0):
-                                        st.warning(f"Correction file '{corr_file.name}' has all-zero data. Deconvolution skipped for channel {channel_name}.")
-                                        df_corr = None
-                                except pd.errors.EmptyDataError:
-                                    st.warning(f"Correction file '{corr_file.name}' is empty or invalid. Deconvolution skipped for channel {channel_name}.")
-                                    df_corr = None
-                            else:
-                                st.warning(f"Correction channel file not found: {deconv_correction_channel}")
-                        
-                            # Now go into wells loop:
-                            for well, color in zip(wells, color_list):
-                                if well in df.columns:
-                                    y = df[well].copy()
-                        
-                                    # DECONVOLUTION if correction was loaded
-                                    if enable_deconvolution and channel_name == deconv_target_channel and df_corr is not None:
-                                        if well in df_corr.columns:
-                                            y_corr = df_corr[well]
-                                            y = y + alpha_value * y_corr
-                                        else:
-                                            st.warning(f"Correction file loaded but well {well} not found in correction file.")
-
                                     
                         if normalize_to_rox and rox_df is not None and well in rox_df.columns and channel_name.upper() != "ROX":
                             rox_signal = rox_df[well]
