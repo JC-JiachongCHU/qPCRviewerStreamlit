@@ -173,7 +173,10 @@ if platform == "Bio-Rad":
         alpha_value = st.sidebar.number_input("Alpha Multiplier (α)", min_value=-10.0, max_value=10.0, value=0.07, step=0.01)
 else:
     enable_deconvolution = False    
+    
 selected_channels = st.sidebar.multiselect("Select Channels to Plot", channel_options, default=default_channels)
+
+
 normalize_to_rox = st.sidebar.checkbox("Normalize fluorescence to ROX channel")
 
 
@@ -188,7 +191,17 @@ if use_baseline and baseline_method == "Average of N cycles":
 log_y = st.sidebar.toggle("Use Semilog Y-axis (log scale)")
 
 threshold_enabled = st.sidebar.checkbox("Enable Threshold & Ct Calculation")
-threshold_value = st.sidebar.number_input("Set RFU Threshold", min_value=0.0, value=1000.0, step=100.0)
+# threshold_value = st.sidebar.number_input("Set RFU Threshold", min_value=0.0, value=1000.0, step=100.0)
+# Per-channel thresholds
+per_channel_thresholds = {}
+if threshold_enabled:
+    st.sidebar.markdown("**Per-Channel Thresholds:**")
+    for ch in selected_channels:
+        default_thresh = 1000.0  # you can set any default
+        per_channel_thresholds[ch] = st.sidebar.number_input(
+            f"Threshold for {ch}", min_value=0.0, value=default_thresh, step=100.0, key=f"threshold_{ch}"
+        )
+        
 
 channel_name_map = {
     "FAM": "FAM",
@@ -296,7 +309,8 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                                     
                                     if len(x_fit) >= 5:  # ensure enough points to fit
                                         popt, _ = curve_fit(four_param_logistic, x_fit, y_fit, maxfev=10000)
-                                        ct = inverse_four_pl(threshold_value, *popt)
+                                        channel_threshold = per_channel_thresholds.get(channel_name, threshold_value)  # fallback just in case
+                                        ct = inverse_four_pl(channel_threshold, *popt)
                                         if ct is not None and x_fit[0] <= ct <= x_fit[-1]:
                                             ct_results.append({
                                                 "Group": group,
@@ -437,7 +451,8 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                                 
                                 if len(x_fit) >= 5:  # ensure enough points to fit
                                     popt, _ = curve_fit(four_param_logistic, x_fit, y_fit, maxfev=10000)                                 
-                                    ct = inverse_four_pl(threshold_value, *popt)
+                                    channel_threshold = per_channel_thresholds.get(channel_name, threshold_value)  # fallback just in case
+                                    ct = inverse_four_pl(channel_threshold, *popt)
 
                                     if ct is not None and x_fit[0] <= ct <= x_fit[-1]:
                                         ct_results.append({
