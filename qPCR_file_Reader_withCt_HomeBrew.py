@@ -166,6 +166,16 @@ else:
 selected_channels = st.sidebar.multiselect("Select Channels to Plot", channel_options, default=default_channels)
 normalize_to_rox = st.sidebar.checkbox("Normalize fluorescence to ROX channel")
 
+if platform == "Bio-Rad":
+    st.sidebar.subheader("Deconvolution Settings (Bio-Rad only)")
+    enable_deconvolution = st.sidebar.checkbox("Enable Deconvolution for Bio-Rad")
+    if enable_deconvolution:
+        deconv_target_channel = st.sidebar.selectbox("Channel to Deconvolve", channel_options, index=2)   # e.g. Cy5
+        deconv_correction_channel = st.sidebar.selectbox("Correction Channel", channel_options, index=3)   # e.g. Cy5.5
+        alpha_value = st.sidebar.number_input("Alpha Multiplier (α)", min_value=-10.0, max_value=10.0, value=0.0, step=0.01)
+else:
+    enable_deconvolution = False
+
 # Baseline, Log Y, Threshold
 st.sidebar.subheader("Step 3: Baseline Settings")
 use_baseline = st.sidebar.toggle("Apply Baseline Subtraction", value=False)
@@ -336,11 +346,7 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
             for group, info in st.session_state["groups"].items():
                 wells = info["wells"]
                 base_color = info["color"]
-                # color_list = [base_color] * len(wells) if color_mode == "Solid" else [
-                #     mcolors.LinearSegmentedColormap.from_list("gradient", [
-                #         tuple(1 - 0.5 * (1 - c) for c in mcolors.to_rgb(base_color)), mcolors.to_rgb(base_color)
-                #     ])(j / max(1, len(wells) - 1)) for j in range(len(wells))
-                # ]
+
                 if color_mode == "Solid":
                     color_list = [base_color] * len(wells)
                 elif color_mode == "Gradient":
@@ -358,7 +364,22 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                 for well, color in zip(wells, color_list):
                     if well in df.columns:
                         y = df[well].copy()
-                        
+
+                        # ---- DECONVOLUTION ----
+                        if enable_deconvolution and channel_name == deconv_target_channel:
+                                # Load correction channel
+                                match_key_corr = channel_name_map.get(deconv_correction_channel, deconv_correction_channel.lower())
+                                corr_file = next((f for f in uploaded_files if match_key_corr.lower() in f.name.lower()), None)
+                                if corr_file:
+                                    df_corr = pd.read_csv(corr_file)
+                                    if well in df_corr.columns:
+                                        y_corr = df_corr[well]
+                                        y = y + alpha_value * y_corr  # apply deconvolution
+                                    else:
+                                        st.warning(f"Correction channel file loaded, but well {well} not found in correction file.")
+                                else:
+                                    st.warning(f"Correction channel file not found: {deconv_correction_channel}")
+                                    
                         if normalize_to_rox and rox_df is not None and well in rox_df.columns and channel_name.upper() != "ROX":
                             rox_signal = rox_df[well]
                             if np.all(rox_signal > 0):
