@@ -309,7 +309,7 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                                     
                                     if len(x_fit) >= 5:  # ensure enough points to fit
                                         popt, _ = curve_fit(four_param_logistic, x_fit, y_fit, maxfev=10000)
-                                        channel_threshold = per_channel_thresholds.get(channel_name, threshold_value)  # fallback just in case
+                                        channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
                                         ct = inverse_four_pl(channel_threshold, *popt)
                                         if ct is not None and x_fit[0] <= ct <= x_fit[-1]:
                                             ct_results.append({
@@ -327,8 +327,9 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                                             #     font=dict(size=10),
                                             #     bgcolor="white"
                                             # )
-                                except:
-                                    above = y > threshold_value
+                                except:                          
+                                    channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
+                                    above = y > channel_threshold
                                     
                                     if any(above):
                                         first_cross = above.idxmax()
@@ -451,7 +452,7 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                                 
                                 if len(x_fit) >= 5:  # ensure enough points to fit
                                     popt, _ = curve_fit(four_param_logistic, x_fit, y_fit, maxfev=10000)                                 
-                                    channel_threshold = per_channel_thresholds.get(channel_name, threshold_value)  # fallback just in case
+                                    channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
                                     ct = inverse_four_pl(channel_threshold, *popt)
 
                                     if ct is not None and x_fit[0] <= ct <= x_fit[-1]:
