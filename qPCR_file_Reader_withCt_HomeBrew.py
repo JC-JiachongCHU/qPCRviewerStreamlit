@@ -155,7 +155,17 @@ if color_mode == "Colormap":
     colormap_name = st.sidebar.selectbox(
         "Select a Colormap", ["jet", "viridis", "plasma", "cividis", "cool", "hot", "spring", "summer", "winter"]
     )
-
+    
+if platform == "Bio-Rad":
+    st.sidebar.subheader("Deconvolution Settings (Bio-Rad only)")
+    enable_deconvolution = st.sidebar.checkbox("Enable Deconvolution for Bio-Rad")
+    if enable_deconvolution:
+        deconv_target_channel = st.sidebar.selectbox("Channel to Deconvolve", channel_options, index=2)   # e.g. Cy5
+        deconv_correction_channel = st.sidebar.selectbox("Correction Channel", channel_options, index=3)   # e.g. Cy5.5
+        alpha_value = st.sidebar.number_input("Alpha Multiplier (α)", min_value=-10.0, max_value=10.0, value=0.07, step=0.01)
+else:
+    enable_deconvolution = False
+    
 if platform == "QuantStudio (QS)":
     channel_options = [str(i) for i in range(1, 13)]
     default_channels = ["1", "2"]
@@ -166,15 +176,7 @@ else:
 selected_channels = st.sidebar.multiselect("Select Channels to Plot", channel_options, default=default_channels)
 normalize_to_rox = st.sidebar.checkbox("Normalize fluorescence to ROX channel")
 
-if platform == "Bio-Rad":
-    st.sidebar.subheader("Deconvolution Settings (Bio-Rad only)")
-    enable_deconvolution = st.sidebar.checkbox("Enable Deconvolution for Bio-Rad")
-    if enable_deconvolution:
-        deconv_target_channel = st.sidebar.selectbox("Channel to Deconvolve", channel_options, index=2)   # e.g. Cy5
-        deconv_correction_channel = st.sidebar.selectbox("Correction Channel", channel_options, index=3)   # e.g. Cy5.5
-        alpha_value = st.sidebar.number_input("Alpha Multiplier (α)", min_value=-10.0, max_value=10.0, value=0.07, step=0.01)
-else:
-    enable_deconvolution = False
+
 
 # Baseline, Log Y, Threshold
 st.sidebar.subheader("Step 3: Baseline Settings")
