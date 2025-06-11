@@ -347,27 +347,27 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
             df = df.loc[:, ~df.columns.str.contains("Unnamed")]
 
              # ======= DECONVOLUTION: Load correction file ONCE here =======
-                df_corr = None
-                if enable_deconvolution and channel_name == deconv_target_channel:
-                    match_key_corr = channel_name_map.get(deconv_correction_channel, deconv_correction_channel.lower())
-                    corr_file = next((f for f in uploaded_files if match_key_corr.lower() in f.name.lower()), None)
-                    if corr_file:
-                        try:
-                            df_corr = pd.read_csv(corr_file, comment='#')
-                            df_corr.columns = df_corr.columns.str.strip()
-                            df_corr = df_corr.loc[:, ~df_corr.columns.str.contains("Unnamed")]
-            
-                            if df_corr.empty:
-                                st.warning(f"Correction file '{corr_file.name}' is empty. Deconvolution skipped for channel {channel_name}.")
-                                df_corr = None
-                            elif (df_corr.drop(columns='Cycle', errors='ignore').sum().sum() == 0):
-                                st.warning(f"Correction file '{corr_file.name}' has all-zero data. Deconvolution skipped for channel {channel_name}.")
-                                df_corr = None
-                        except pd.errors.EmptyDataError:
-                            st.warning(f"Correction file '{corr_file.name}' is empty or invalid. Deconvolution skipped for channel {channel_name}.")
+            df_corr = None
+            if enable_deconvolution and channel_name == deconv_target_channel:
+                match_key_corr = channel_name_map.get(deconv_correction_channel, deconv_correction_channel.lower())
+                corr_file = next((f for f in uploaded_files if match_key_corr.lower() in f.name.lower()), None)
+                if corr_file:
+                    try:
+                        df_corr = pd.read_csv(corr_file, comment='#')
+                        df_corr.columns = df_corr.columns.str.strip()
+                        df_corr = df_corr.loc[:, ~df_corr.columns.str.contains("Unnamed")]
+        
+                        if df_corr.empty:
+                            st.warning(f"Correction file '{corr_file.name}' is empty. Deconvolution skipped for channel {channel_name}.")
                             df_corr = None
-                    else:
-                        st.warning(f"Correction channel file not found: {deconv_correction_channel}")
+                        elif (df_corr.drop(columns='Cycle', errors='ignore').sum().sum() == 0):
+                            st.warning(f"Correction file '{corr_file.name}' has all-zero data. Deconvolution skipped for channel {channel_name}.")
+                            df_corr = None
+                    except pd.errors.EmptyDataError:
+                        st.warning(f"Correction file '{corr_file.name}' is empty or invalid. Deconvolution skipped for channel {channel_name}.")
+                        df_corr = None
+                else:
+                    st.warning(f"Correction channel file not found: {deconv_correction_channel}")
 
             for group, info in st.session_state["groups"].items():
                 wells = info["wells"]
