@@ -386,25 +386,33 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                 else:
                     color_list = [base_color] * len(wells)
                 
-
+                # ======= For each well =======
                 for well, color in zip(wells, color_list):
                     if well in df.columns:
                         y = df[well].copy()
-                                    
+            
+                        # Apply deconvolution IF df_corr loaded and well present
+                        if enable_deconvolution and channel_name == deconv_target_channel and df_corr is not None:
+                            if well in df_corr.columns:
+                                y_corr = df_corr[well]
+                                y = y + alpha_value * y_corr
+                            else:
+                                st.warning(f"Correction file loaded but well {well} not found in correction file.")
+            
+                        # === Rest of your processing ===
                         if normalize_to_rox and rox_df is not None and well in rox_df.columns and channel_name.upper() != "ROX":
                             rox_signal = rox_df[well]
                             if np.all(rox_signal > 0):
                                 y = y / rox_signal
-                                
+            
                         if use_baseline:
                             if baseline_method == "Average of N cycles":
                                 baseline = y.iloc[:baseline_cycles].mean()
                                 y -= baseline
                             elif baseline_method == "Homebrew Lift-off Fit":
                                 y, _ = spr_qpcr_background_correction(np.array(y))
-                            
+            
                         x = df["Cycle"].values
-
                         style = channel_styles[i % len(channel_styles)]
                         fig.add_trace(go.Scatter(
                             x=x,
@@ -414,6 +422,7 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                             line=dict(color=mcolors.to_hex(color), dash=style["dash"]),
                             marker=dict(symbol=style["symbol"], size=6) if style["symbol"] else None
                         ))
+                    
 
                         if threshold_enabled:
                             try:
