@@ -72,12 +72,34 @@ platform = st.radio("Select qPCR Platform", ["QuantStudio (QS)", "Bio-Rad"], ind
 
 # Upload files
 uploaded_files = []
-if platform == "QuantStudio (QS)":
-    uploaded_file = st.file_uploader("Upload QuantStudio xlsx or csv", type=["xlsx", "csv"])
-    if uploaded_file:
-        uploaded_files.append(("QS", uploaded_file))
-else:
-    uploaded_files = st.file_uploader("Upload Bio-Rad CSVs (1 per channel)", type=["csv"], accept_multiple_files=True)
+if uploaded_files:
+    if platform == "QuantStudio (QS)":
+        filetype = uploaded_files[0][1].name.split(".")[-1].lower()
+        if filetype == "xlsx":
+            df = pd.read_excel(uploaded_files[0][1])
+        else:
+            df = pd.read_csv(uploaded_files[0][1], skiprows=22)
+
+        df.columns = df.columns.str.strip()
+
+        # Basic cleaning
+        df = df[df["Well Position"] != "Well Position"]
+        df["Cycle Number"] = pd.to_numeric(df["Cycle Number"], errors="coerce")
+        df = df.dropna(subset=["Cycle Number"])
+        df = df.sort_values(by=["Well Position", "Cycle Number"])
+
+        # Channel definitions
+        dye_channels = ["FAM", "VIC", "ROX", "CY5", "CY5.5"]
+        for col in dye_channels:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        channel_options = [ch for ch in dye_channels if ch in df.columns]
+        default_channels = [channel_options[0]] if channel_options else []
+
+    else:  # Bio-Rad
+        channel_options = ["FAM", "HEX", "Cy5", "Cy5.5", "ROX", "SYBR"]
+        default_channels = ["FAM", "HEX"]
 
 # Group state
 if "groups" not in st.session_state:
@@ -164,17 +186,6 @@ df = df.dropna(subset=["Cycle Number"])
 
 # Optional: Ensure sorting by cycle number
 df = df.sort_values(by=["Well Position", "Cycle Number"])
-
-if platform == "QuantStudio (QS)":
-    channel_options = ["FAM", "VIC", "CY5", "CY5.5", "ROX", "SYBR"]
-    default_channels = ["FAM"]
-    # Ensure numerical columns are parsed correctly
-    for col in dye_channels:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-else:
-    channel_options = ["FAM", "HEX", "Cy5", "Cy5.5", "ROX", "SYBR"]
-    default_channels = ["FAM", "HEX"]
 
 
 if platform == "Bio-Rad":
