@@ -11,7 +11,6 @@ import datetime
 import io
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
-
 from openpyxl import load_workbook
 from openpyxl.formatting.rule import ColorScaleRule
 from openpyxl.styles import Border, Side
@@ -157,8 +156,6 @@ if color_mode == "Colormap":
     )
 
 if platform == "QuantStudio (QS)":
-    channel_options = [str(i) for i in range(1, 13)]
-    default_channels = ["1", "2"]
     channel_options = ["FAM", "VIC", "ROX", "CY5", "CY5.5"]
     default_channels = ["FAM"]
 else:
@@ -285,9 +282,6 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                     x = sub_df[cycle_col].values
 
                     for i, chan_str in enumerate(selected_channels):
-                        chan_idx = int(chan_str) - 1
-
-
                         if 0 <= chan_idx < len(rfu_cols):
                             y = sub_df[rfu_cols[chan_idx]].copy()
                             if normalize_to_rox:
