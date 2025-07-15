@@ -275,16 +275,17 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                     sub_df = df[df["Well Position"] == well].sort_values(by=cycle_col)
                     x = sub_df[cycle_col].values
                     
-                    for i, chan_str in enumerate(selected_channels):
-                        chan_idx = int(chan_str) - 1
+                    if chan_str in rfu_cols:
+                        y = sub_df[chan_str].copy()
+                    else:
+                        continue  # Skip if channel not found
 
                         
                         if 0 <= chan_idx < len(rfu_cols):
                             y = sub_df[rfu_cols[chan_idx]].copy()
                             if normalize_to_rox:
-                                rox_index = 6  # ROX is the 7th channel (index 6)
-                                if rox_index < len(rfu_cols):
-                                    rox_signal = sub_df[rfu_cols[rox_index]]
+                                if "ROX" in sub_df.columns:
+                                    rox_signal = sub_df["ROX"]
                                     if np.all(rox_signal > 0):  # avoid divide-by-zero
                                         y = y / rox_signal
                                 
