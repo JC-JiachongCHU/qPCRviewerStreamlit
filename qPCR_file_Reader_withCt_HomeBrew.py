@@ -251,11 +251,9 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
         if filetype == "xlsx":
             df = pd.read_excel(uploaded_files[0])
         else:
-            # Only QuantStudio CSVs require skiprows=22
-            df = pd.read_csv(uploaded_files[0], skiprows=22)
-    else:
-        # Bio-Rad typically uses standard CSV format with headers
-        df = pd.read_csv(uploaded_files[0])
+            df = pd.read_csv(uploaded_files[0], skiprows=23)
+
+        df.columns = df.columns.str.strip()
 
         df = df[df["Well Position"] != "Well Position"]
         df.iloc[:, 5:] = df.iloc[:, 5:].apply(pd.to_numeric, errors='coerce')
