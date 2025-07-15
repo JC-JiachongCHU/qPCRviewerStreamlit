@@ -155,10 +155,23 @@ if color_mode == "Colormap":
     colormap_name = st.sidebar.selectbox(
         "Select a Colormap", ["jet", "viridis", "plasma", "cividis", "cool", "hot", "spring", "summer", "winter"]
     )
-    
+
+
+
+# Drop rows without a proper Cycle Number
+df["Cycle Number"] = pd.to_numeric(df["Cycle Number"], errors="coerce")
+df = df.dropna(subset=["Cycle Number"])
+
+# Optional: Ensure sorting by cycle number
+df = df.sort_values(by=["Well Position", "Cycle Number"])
+
 if platform == "QuantStudio (QS)":
-    channel_options = [str(i) for i in range(1, 13)]
-    default_channels = ["1", "2"]
+    channel_options = ["FAM", "VIC", "CY5", "CY5.5", "ROX", "SYBR"]
+    default_channels = ["FAM"]
+    # Ensure numerical columns are parsed correctly
+    for col in dye_channels:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
 else:
     channel_options = ["FAM", "HEX", "Cy5", "Cy5.5", "ROX", "SYBR"]
     default_channels = ["FAM", "HEX"]
@@ -231,7 +244,8 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
         if filetype == "xlsx":
             df = pd.read_excel(uploaded_files[0][1])
         else:
-            df = pd.read_csv(uploaded_files[0][1])
+            df = pd.read_csv(uploaded_files[0][1], skiprows=22)
+            df.columns = df.columns.str.strip()
 
         df = df[df["Well Position"] != "Well Position"]
         df.iloc[:, 5:] = df.iloc[:, 5:].apply(pd.to_numeric, errors='coerce')
@@ -266,11 +280,8 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                     x = sub_df[cycle_col].values
                     
                     for i, chan_str in enumerate(selected_channels):
-                        chan_idx = int(chan_str) - 1
-
-                        
-                        if 0 <= chan_idx < len(rfu_cols):
-                            y = sub_df[rfu_cols[chan_idx]].copy()
+                        if chan_str in sub_df.columns:
+                            y = sub_df[chan_str].copy()
                             if normalize_to_rox:
                                 rox_index = 6  # ROX is the 7th channel (index 6)
                                 if rox_index < len(rfu_cols):
