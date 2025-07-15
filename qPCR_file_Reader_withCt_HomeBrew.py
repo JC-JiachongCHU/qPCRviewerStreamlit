@@ -72,6 +72,8 @@ platform = st.radio("Select qPCR Platform", ["QuantStudio (QS)", "Bio-Rad"], ind
 
 # Upload files
 uploaded_files = []
+channel_options = []
+default_channels = []
 if uploaded_files:
     if platform == "QuantStudio (QS)":
         filetype = uploaded_files[0][1].name.split(".")[-1].lower()
