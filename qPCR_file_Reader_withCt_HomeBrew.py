@@ -274,38 +274,37 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                 if well in df["Well Position"].values:
                     sub_df = df[df["Well Position"] == well].sort_values(by=cycle_col)
                     x = sub_df[cycle_col].values
-                    
-                    if chan_str in rfu_cols:
-                        y = sub_df[chan_str].copy()
-                    else:
-                        continue  # Skip if channel not found
-
-                        
-                        if 0 <= chan_idx < len(rfu_cols):
-                            y = sub_df[rfu_cols[chan_idx]].copy()
-                            if normalize_to_rox:
-                                if "ROX" in sub_df.columns:
-                                    rox_signal = sub_df["ROX"]
-                                    if np.all(rox_signal > 0):  # avoid divide-by-zero
-                                        y = y / rox_signal
-                                
-                            if use_baseline:
-                                if baseline_method == "Average of N cycles":
-                                    baseline = y.iloc[:baseline_cycles].mean()
-                                    y -= baseline
-                                elif baseline_method == "Homebrew Lift-off Fit":
-                                    y, _ = spr_qpcr_background_correction(np.array(y))
-                                    
-                                
-                            style = channel_styles[i % len(channel_styles)]
-                            fig.add_trace(go.Scatter(
-                                x=x,
-                                y=y,
-                                mode="lines+markers" if style["symbol"] else "lines",
-                                name=f"{group}: {well} (Ch {chan_str})",
-                                line=dict(color=mcolors.to_hex(color), dash=style["dash"]),
-                                marker=dict(symbol=style["symbol"], size=6) if style["symbol"] else None
-                            ))
+            
+                for i, chan_str in enumerate(selected_channels):
+                    if chan_str not in rfu_cols:
+                        continue
+                
+                    y = sub_df[chan_str].copy()
+                
+                    # Normalize to ROX
+                    if normalize_to_rox and chan_str != "ROX" and "ROX" in sub_df.columns:
+                        rox_signal = sub_df["ROX"]
+                        if np.all(rox_signal > 0):
+                            y = y / rox_signal
+                
+                    # Baseline subtraction
+                    if use_baseline:
+                        if baseline_method == "Average of N cycles":
+                            baseline = y.iloc[:baseline_cycles].mean()
+                            y -= baseline
+                        elif baseline_method == "Homebrew Lift-off Fit":
+                            y, _ = spr_qpcr_background_correction(np.array(y))
+                
+                    # Plotting
+                    style = channel_styles[i % len(channel_styles)]
+                    fig.add_trace(go.Scatter(
+                        x=x,
+                        y=y,
+                        mode="lines+markers" if style["symbol"] else "lines",
+                        name=f"{group}: {well} (Ch {chan_str})",
+                        line=dict(color=mcolors.to_hex(color), dash=style["dash"]),
+                        marker=dict(symbol=style["symbol"], size=6) if style["symbol"] else None
+                    ))
 
                             if threshold_enabled:
                                 try:
