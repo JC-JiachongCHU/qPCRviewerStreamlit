@@ -602,9 +602,9 @@ if enable_debug_heatmap:
 
     if platform == "QuantStudio (QS)" and uploaded_files:
         df = pd.read_excel(uploaded_files[0][1]) if uploaded_files[0][1].name.endswith("xlsx") else pd.read_csv(uploaded_files[0][1])
-        df = df[df["Well Position"] != "Well Position"]
+        df = df[df["Well Position"].notna()]
         df.iloc[:, 5:] = df.iloc[:, 5:].apply(pd.to_numeric, errors='coerce')
-        rfu_cols = [col for col in df.columns if col.startswith("X")]
+        rfu_cols = [col for col in df.columns if col in ["FAM", "VIC", "ROX", "CY5", "CY5.5"]]
         debug_chan_idx = int(debug_channel) - 1
 
         detected_wells = df["Well Position"].dropna().unique()
