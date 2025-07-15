@@ -247,14 +247,16 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
     fig = go.Figure()
 
     if platform == "QuantStudio (QS)":
-        filetype = uploaded_files[0].name.split(".")[-1].lower()
-        if filetype == "xlsx":
-            df = pd.read_excel(uploaded_files[0])
+        uploaded_file = uploaded_files[0]
+        filetype = uploaded_file.name.split(".")[-1].lower()
+        
+        if filetype == "csv":
+            content = uploaded_file.read().decode("utf-8")  # decode bytes to string
+            uploaded_file.seek(0)  # reset pointer just in case
+            df = pd.read_csv(io.StringIO(content), skiprows=23)
         else:
-            df = pd.read_csv(uploaded_files[0], skiprows=23)
-
-        df.columns = df.columns.str.strip()
-
+            df = pd.read_excel(uploaded_file)
+            
         df = df[df["Well Position"] != "Well Position"]
         df.iloc[:, 5:] = df.iloc[:, 5:].apply(pd.to_numeric, errors='coerce')
         rfu_cols = [col for col in df.columns if col.startswith("X")]
