@@ -157,8 +157,8 @@ if color_mode == "Colormap":
     )
     
 if platform == "QuantStudio (QS)":
-    channel_options = [str(i) for i in range(1, 13)]
-    default_channels = ["1", "2"]
+    channel_options = ["FAM", "VIC", "ROX", "CY5", "CY5.5"]
+    default_channels = ["FAM"]
 else:
     channel_options = ["FAM", "HEX", "Cy5", "Cy5.5", "ROX", "SYBR"]
     default_channels = ["FAM", "HEX"]
@@ -228,15 +228,25 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
 
     if platform == "QuantStudio (QS)":
         filetype = uploaded_files[0][1].name.split(".")[-1].lower()
-        if filetype == "xlsx":
-            df = pd.read_excel(uploaded_files[0][1])
+        if filetype == "csv":
+            # Multicomponent CSV file parsing (skip metadata lines)
+            df = pd.read_csv(uploaded_files[0][1], skiprows=23)
+            df = df[df["Well Position"].notna()]
+            df["Cycle Number"] = pd.to_numeric(df["Cycle Number"], errors='coerce')
+    
+            # Define available channels from columns
+            rfu_cols = ["FAM", "VIC", "ROX", "CY5", "CY5.5"]
+            cycle_col = "Cycle Number"
         else:
-            df = pd.read_csv(uploaded_files[0][1])
+            df = pd.read_excel(uploaded_files[0][1])
+            # fallback to previous structure
+            df = df[df["Well Position"] != "Well Position"]
+            df.iloc[:, 5:] = df.iloc[:, 5:].apply(pd.to_numeric, errors='coerce')
+            rfu_cols = [col for col in df.columns if col.startswith("X")]
+            cycle_col = next((col for col in df.columns if "cycle" in col.lower()), "Cycle Number")
 
-        df = df[df["Well Position"] != "Well Position"]
-        df.iloc[:, 5:] = df.iloc[:, 5:].apply(pd.to_numeric, errors='coerce')
-        rfu_cols = [col for col in df.columns if col.startswith("X")]
-        cycle_col = next((col for col in df.columns if "cycle" in col.lower()), "Cycle Number")
+
+        
 
         for group, info in st.session_state["groups"].items():
             wells = info["wells"]
