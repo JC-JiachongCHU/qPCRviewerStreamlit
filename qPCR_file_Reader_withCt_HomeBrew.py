@@ -71,7 +71,11 @@ well_names = [f"{r}{c}" for r in rows for c in cols]
 platform = st.radio("Select qPCR Platform", ["QuantStudio (QS)", "Bio-Rad"], index=1)
 
 # Upload files
-uploaded_files = []
+uploaded_files = st.file_uploader(
+    "Upload QuantStudio or Bio-Rad CSV/XLSX files", 
+    type=["csv", "xlsx"], 
+    accept_multiple_files=True
+)
 channel_options = []
 default_channels = []
 if uploaded_files:
