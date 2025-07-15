@@ -180,12 +180,12 @@ if color_mode == "Colormap":
 
 
 
-# Drop rows without a proper Cycle Number
-df["Cycle Number"] = pd.to_numeric(df["Cycle Number"], errors="coerce")
-df = df.dropna(subset=["Cycle Number"])
+# # Drop rows without a proper Cycle Number
+# df["Cycle Number"] = pd.to_numeric(df["Cycle Number"], errors="coerce")
+# df = df.dropna(subset=["Cycle Number"])
 
-# Optional: Ensure sorting by cycle number
-df = df.sort_values(by=["Well Position", "Cycle Number"])
+# # Optional: Ensure sorting by cycle number
+# df = df.sort_values(by=["Well Position", "Cycle Number"])
 
 
 if platform == "Bio-Rad":
