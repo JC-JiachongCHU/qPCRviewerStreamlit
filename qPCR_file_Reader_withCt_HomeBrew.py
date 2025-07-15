@@ -270,85 +270,85 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                 color_list = [base_color] * len(wells)
             
 
-            for well, color in zip(wells, color_list):
-                if well in df["Well Position"].values:
-                    sub_df = df[df["Well Position"] == well].sort_values(by=cycle_col)
-                    x = sub_df[cycle_col].values
-            
-                for i, chan_str in enumerate(selected_channels):
-                    if chan_str not in rfu_cols:
-                        continue
+                for well, color in zip(wells, color_list):
+                    if well in df["Well Position"].values:
+                        sub_df = df[df["Well Position"] == well].sort_values(by=cycle_col)
+                        x = sub_df[cycle_col].values
                 
-                    y = sub_df[chan_str].copy()
-                
-                    # Normalize to ROX
-                    if normalize_to_rox and chan_str != "ROX" and "ROX" in sub_df.columns:
-                        rox_signal = sub_df["ROX"]
-                        if np.all(rox_signal > 0):
-                            y = y / rox_signal
-                
-                    # Baseline subtraction
-                    if use_baseline:
-                        if baseline_method == "Average of N cycles":
-                            baseline = y.iloc[:baseline_cycles].mean()
-                            y -= baseline
-                        elif baseline_method == "Homebrew Lift-off Fit":
-                            y, _ = spr_qpcr_background_correction(np.array(y))
-                
-                    # Plotting
-                    style = channel_styles[i % len(channel_styles)]
-                    fig.add_trace(go.Scatter(
-                        x=x,
-                        y=y,
-                        mode="lines+markers" if style["symbol"] else "lines",
-                        name=f"{group}: {well} (Ch {chan_str})",
-                        line=dict(color=mcolors.to_hex(color), dash=style["dash"]),
-                        marker=dict(symbol=style["symbol"], size=6) if style["symbol"] else None
-                    ))
-
-                    if threshold_enabled:
-                        try:
-                            # Remove NaNs
-                            valid = ~np.isnan(x) & ~np.isnan(y)
-                            x_fit = np.array(x[valid], dtype=float)
-                            y_fit = np.array(y[valid], dtype=float)
-
-                            post_cycle_10 = x_fit >= 10
-                            x_fit = x_fit[post_cycle_10]
-                            y_fit = y_fit[post_cycle_10]
-                            
-                            if len(x_fit) >= 5:  # ensure enough points to fit
-                                popt, _ = curve_fit(four_param_logistic, x_fit, y_fit, maxfev=10000)
+                    for i, chan_str in enumerate(selected_channels):
+                        if chan_str not in rfu_cols:
+                            continue
+                    
+                        y = sub_df[chan_str].copy()
+                    
+                        # Normalize to ROX
+                        if normalize_to_rox and chan_str != "ROX" and "ROX" in sub_df.columns:
+                            rox_signal = sub_df["ROX"]
+                            if np.all(rox_signal > 0):
+                                y = y / rox_signal
+                    
+                        # Baseline subtraction
+                        if use_baseline:
+                            if baseline_method == "Average of N cycles":
+                                baseline = y.iloc[:baseline_cycles].mean()
+                                y -= baseline
+                            elif baseline_method == "Homebrew Lift-off Fit":
+                                y, _ = spr_qpcr_background_correction(np.array(y))
+                    
+                        # Plotting
+                        style = channel_styles[i % len(channel_styles)]
+                        fig.add_trace(go.Scatter(
+                            x=x,
+                            y=y,
+                            mode="lines+markers" if style["symbol"] else "lines",
+                            name=f"{group}: {well} (Ch {chan_str})",
+                            line=dict(color=mcolors.to_hex(color), dash=style["dash"]),
+                            marker=dict(symbol=style["symbol"], size=6) if style["symbol"] else None
+                        ))
+    
+                        if threshold_enabled:
+                            try:
+                                # Remove NaNs
+                                valid = ~np.isnan(x) & ~np.isnan(y)
+                                x_fit = np.array(x[valid], dtype=float)
+                                y_fit = np.array(y[valid], dtype=float)
+    
+                                post_cycle_10 = x_fit >= 10
+                                x_fit = x_fit[post_cycle_10]
+                                y_fit = y_fit[post_cycle_10]
+                                
+                                if len(x_fit) >= 5:  # ensure enough points to fit
+                                    popt, _ = curve_fit(four_param_logistic, x_fit, y_fit, maxfev=10000)
+                                    channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
+                                    ct = inverse_four_pl(channel_threshold, *popt)
+                                    if ct is not None and x_fit[0] <= ct <= x_fit[-1]:
+                                        ct_results.append({
+                                            "Group": group,
+                                            "Well": well,
+                                            "Channel": chan_str,
+                                            "Ct": f"{float(ct):.2f}"
+                                        })
+                                        # fig.add_annotation(
+                                        #     x=ct,
+                                        #     y=threshold_value,
+                                        #     text=f"Ct: {ct:.1f}",
+                                        #     showarrow=True,
+                                        #     arrowhead=2,
+                                        #     font=dict(size=10),
+                                        #     bgcolor="white"
+                                        # )
+                            except:                          
                                 channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
-                                ct = inverse_four_pl(channel_threshold, *popt)
-                                if ct is not None and x_fit[0] <= ct <= x_fit[-1]:
-                                    ct_results.append({
-                                        "Group": group,
-                                        "Well": well,
-                                        "Channel": chan_str,
-                                        "Ct": f"{float(ct):.2f}"
-                                    })
-                                    # fig.add_annotation(
-                                    #     x=ct,
-                                    #     y=threshold_value,
-                                    #     text=f"Ct: {ct:.1f}",
-                                    #     showarrow=True,
-                                    #     arrowhead=2,
-                                    #     font=dict(size=10),
-                                    #     bgcolor="white"
-                                    # )
-                        except:                          
-                            channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
-                            above = y > channel_threshold
-                            
-                            if any(above):
-                                first_cross = above.idxmax()
-                                if first_cross > 0:
-                                    y1, y2 = y[first_cross - 1], y[first_cross]
-                                    x1, x2 = x[first_cross - 1], x[first_cross]
-                                    ct = x1 + (threshold_value - y1) * (x2 - x1) / (y2 - y1)
-                                else:
-                                    ct = x[first_cross]
+                                above = y > channel_threshold
+                                
+                                if any(above):
+                                    first_cross = above.idxmax()
+                                    if first_cross > 0:
+                                        y1, y2 = y[first_cross - 1], y[first_cross]
+                                        x1, x2 = x[first_cross - 1], x[first_cross]
+                                        ct = x1 + (threshold_value - y1) * (x2 - x1) / (y2 - y1)
+                                    else:
+                                        ct = x[first_cross]
 
 
     
