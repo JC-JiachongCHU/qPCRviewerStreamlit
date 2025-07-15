@@ -325,7 +325,7 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                                     ct_results.append({
                                         "Group": group,
                                         "Well": well,
-                                        "Channel": chan_str if platform == "QuantStudio (QS)" else channel_name,
+                                        "Channel": chan_str,
                                         "Ct": f"{float(ct):.2f}"
                                     })
                                     # fig.add_annotation(
