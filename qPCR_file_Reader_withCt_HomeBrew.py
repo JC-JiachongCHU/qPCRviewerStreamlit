@@ -282,14 +282,16 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                     x = sub_df[cycle_col].values
 
                     for i, chan_str in enumerate(selected_channels):
+                        if chan_str in rfu_cols:
+                            y = sub_df[chan_str].copy()
+                        else:
+                            continue  # skip if channel not found
                         if 0 <= chan_idx < len(rfu_cols):
                             y = sub_df[rfu_cols[chan_idx]].copy()
-                            if normalize_to_rox:
-                                rox_index = 6  # ROX is the 7th channel (index 6)
-                                if rox_index < len(rfu_cols):
-                                    rox_signal = sub_df[rfu_cols[rox_index]]
-                                    if np.all(rox_signal > 0):  # avoid divide-by-zero
-                                        y = y / rox_signal
+                            if normalize_to_rox and "ROX" in sub_df.columns:
+                                rox_signal = sub_df["ROX"]
+                                if np.all(rox_signal > 0):
+                                    y = y / rox_signal
 
                             if use_baseline:
                                 if baseline_method == "Average of N cycles":
