@@ -247,11 +247,11 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
     fig = go.Figure()
 
     if platform == "QuantStudio (QS)":
-        filetype = uploaded_files[0][1].name.split(".")[-1].lower()
+        filetype = uploaded_files[0].name.split(".")[-1].lower()
         if filetype == "xlsx":
-            df = pd.read_excel(uploaded_files[0][1])
+            df = pd.read_excel(uploaded_files[0])
         else:
-            df = pd.read_csv(uploaded_files[0][1], skiprows=22)
+            df = pd.read_csv(uploaded_files[0], skiprows=23)
             df.columns = df.columns.str.strip()
 
         df = df[df["Well Position"] != "Well Position"]
