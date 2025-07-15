@@ -180,14 +180,6 @@ if color_mode == "Colormap":
 
 
 
-# # Drop rows without a proper Cycle Number
-# df["Cycle Number"] = pd.to_numeric(df["Cycle Number"], errors="coerce")
-# df = df.dropna(subset=["Cycle Number"])
-
-# # Optional: Ensure sorting by cycle number
-# df = df.sort_values(by=["Well Position", "Cycle Number"])
-
-
 if platform == "Bio-Rad":
     st.sidebar.subheader("Deconvolution Settings (Bio-Rad only)")
     enable_deconvolution = st.sidebar.checkbox("Enable Deconvolution for Bio-Rad")
@@ -199,8 +191,6 @@ else:
     enable_deconvolution = False    
     
 selected_channels = st.sidebar.multiselect("Select Channels to Plot", channel_options, default=default_channels)
-
-
 normalize_to_rox = st.sidebar.checkbox("Normalize fluorescence to ROX channel")
 
 
