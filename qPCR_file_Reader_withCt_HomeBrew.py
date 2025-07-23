@@ -71,41 +71,13 @@ well_names = [f"{r}{c}" for r in rows for c in cols]
 platform = st.radio("Select qPCR Platform", ["QuantStudio (QS)", "Bio-Rad"], index=1)
 
 # Upload files
-uploaded_files = st.file_uploader(
-    "Upload QuantStudio or Bio-Rad CSV/XLSX files", 
-    type=["csv", "xlsx"], 
-    accept_multiple_files=True
-)
-channel_options = []
-default_channels = []
-if uploaded_files:
-    if platform == "QuantStudio (QS)":
-        filetype = uploaded_files[0].name.split(".")[-1].lower()
-        if filetype == "xlsx":
-            df = pd.read_excel(uploaded_files[0])
-        else:
-            df = pd.read_csv(uploaded_files[0], skiprows=23)
-
-        df.columns = df.columns.str.strip()
-
-        # Basic cleaning
-        df = df[df["Well Position"] != "Well Position"]
-        df["Cycle Number"] = pd.to_numeric(df["Cycle Number"], errors="coerce")
-        df = df.dropna(subset=["Cycle Number"])
-        df = df.sort_values(by=["Well Position", "Cycle Number"])
-
-        # Channel definitions
-        dye_channels = ["FAM", "VIC", "ROX", "CY5", "CY5.5"]
-        for col in dye_channels:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce")
-
-        channel_options = [ch for ch in dye_channels if ch in df.columns]
-        default_channels = [channel_options[0]] if channel_options else []
-
-    else:  # Bio-Rad
-        channel_options = ["FAM", "HEX", "Cy5", "Cy5.5", "ROX", "SYBR"]
-        default_channels = ["FAM", "HEX"]
+uploaded_files = []
+if platform == "QuantStudio (QS)":
+    uploaded_file = st.file_uploader("Upload QuantStudio xlsx or csv", type=["xlsx", "csv"])
+    if uploaded_file:
+        uploaded_files.append(("QS", uploaded_file))
+else:
+    uploaded_files = st.file_uploader("Upload Bio-Rad CSVs (1 per channel)", type=["csv"], accept_multiple_files=True)
 
 # Group state
 if "groups" not in st.session_state:
@@ -183,7 +155,13 @@ if color_mode == "Colormap":
     colormap_name = st.sidebar.selectbox(
         "Select a Colormap", ["jet", "viridis", "plasma", "cividis", "cool", "hot", "spring", "summer", "winter"]
     )
-
+    
+if platform == "QuantStudio (QS)":
+    channel_options = [str(i) for i in range(1, 13)]
+    default_channels = ["1", "2"]
+else:
+    channel_options = ["FAM", "HEX", "Cy5", "Cy5.5", "ROX", "SYBR"]
+    default_channels = ["FAM", "HEX"]
 
 
 if platform == "Bio-Rad":
@@ -197,6 +175,8 @@ else:
     enable_deconvolution = False    
     
 selected_channels = st.sidebar.multiselect("Select Channels to Plot", channel_options, default=default_channels)
+
+
 normalize_to_rox = st.sidebar.checkbox("Normalize fluorescence to ROX channel")
 
 
@@ -247,16 +227,12 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
     fig = go.Figure()
 
     if platform == "QuantStudio (QS)":
-        uploaded_file = uploaded_files[0]
-        filetype = uploaded_file.name.split(".")[-1].lower()
-        
-        if filetype == "csv":
-            content = uploaded_file.read().decode("utf-8")  # decode bytes to string
-            uploaded_file.seek(0)  # reset pointer just in case
-            df = pd.read_csv(io.StringIO(content), skiprows=23)
+        filetype = uploaded_files[0][1].name.split(".")[-1].lower()
+        if filetype == "xlsx":
+            df = pd.read_excel(uploaded_files[0][1])
         else:
-            df = pd.read_excel(uploaded_file)
-            
+            df = pd.read_csv(uploaded_files[0][1])
+
         df = df[df["Well Position"] != "Well Position"]
         df.iloc[:, 5:] = df.iloc[:, 5:].apply(pd.to_numeric, errors='coerce')
         rfu_cols = [col for col in df.columns if col.startswith("X")]
@@ -290,8 +266,11 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                     x = sub_df[cycle_col].values
                     
                     for i, chan_str in enumerate(selected_channels):
-                        if chan_str in sub_df.columns:
-                            y = sub_df[chan_str].copy()
+                        chan_idx = int(chan_str) - 1
+
+                        
+                        if 0 <= chan_idx < len(rfu_cols):
+                            y = sub_df[rfu_cols[chan_idx]].copy()
                             if normalize_to_rox:
                                 rox_index = 6  # ROX is the 7th channel (index 6)
                                 if rox_index < len(rfu_cols):
