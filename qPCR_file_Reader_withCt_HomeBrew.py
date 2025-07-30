@@ -38,7 +38,7 @@ def spr_qpcr_background_correction(test_signal):
     
     for i in range(2, len(test_signal) - 4):
         S[i] = np.std(test_signal[i:i+7])
-        if S[i] / S[1] > 1.1:
+        if S[i] / S[1] > 1.5:
             p = np.polyfit(A[2:i+6], test_signal[2:i+6], 1)
             f = np.polyval(p, A)
             E = test_signal - f
