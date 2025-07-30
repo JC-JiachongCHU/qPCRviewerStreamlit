@@ -11,6 +11,7 @@ import datetime
 import io
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
+import re
 
 from openpyxl import load_workbook
 from openpyxl.formatting.rule import ColorScaleRule
@@ -522,7 +523,11 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
             channel_df = ct_df[ct_df["Channel"] == channel]
             for _, row in channel_df.iterrows():
                 well = row["Well"]
-                r, c = well[0], int(well[1:])
+                match = re.match(r"([A-Z]+)([0-9]+)", well)
+                if match:
+                    r, c = match.group(1), int(match.group(2))
+                    if r in plate_matrix.index and c in plate_matrix.columns:
+                        plate_matrix.at[r, c] = float(row["Ct"])
                 if r in plate_matrix.index and c in plate_matrix.columns:
                     plate_matrix.at[r, c] = float(row["Ct"])
     
@@ -603,7 +608,11 @@ if enable_debug_heatmap:
             if debug_chan_idx < len(rfu_cols):
                 y = sub_df[rfu_cols[debug_chan_idx]].iloc[:debug_cycle_count]
                 avg_val = y.mean()
-                r, c = well[0], int(well[1:])
+                match = re.match(r"([A-Z]+)([0-9]+)", well)
+                if match:
+                    r, c = match.group(1), int(match.group(2))
+                    if r in plate_matrix.index and c in plate_matrix.columns:
+                        plate_matrix.at[r, c] = float(row["Ct"])
                 if r in heatmap_matrix.index and c in heatmap_matrix.columns:
                     heatmap_matrix.loc[r, c] = avg_val
 
@@ -622,9 +631,12 @@ if enable_debug_heatmap:
             for well in detected_wells:
                 y = df[well].iloc[:debug_cycle_count]
                 avg_val = y.mean()
-                r, c = well[0], int(well[1:])
-                if r in heatmap_matrix.index and c in heatmap_matrix.columns:
-                    heatmap_matrix.loc[r, c] = avg_val
+                match = re.match(r"([A-Z]+)([0-9]+)", well)
+                if match:
+                    r, c = match.group(1), int(match.group(2))
+                    if r in plate_matrix.index and c in plate_matrix.columns:
+                        plate_matrix.at[r, c] = float(row["Ct"])
+
 
     if heatmap_matrix is not None:
         # Plot heatmap
