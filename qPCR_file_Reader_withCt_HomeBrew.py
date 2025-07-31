@@ -548,7 +548,7 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                                     above = y > channel_threshold
                                 
                                     if any(above):
-                                        first_cross = above.idxmax()
+                                        first_cross = np.argmax(above)
                                         if first_cross > 0:
                                             y1, y2 = y[first_cross - 1], y[first_cross]
                                             x1, x2 = x[first_cross - 1], x[first_cross]
