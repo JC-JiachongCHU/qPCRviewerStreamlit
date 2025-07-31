@@ -526,13 +526,13 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                                 #     channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
                                 #     ct = inverse_four_pl(channel_threshold, *popt)
 
-                                    if ct is not None and x_fit[0] <= ct <= x_fit[-1]:
-                                        ct_results.append({
-                                            "Group": group,
-                                            "Well": well,
-                                            "Channel": channel_name,
-                                            "Ct": f"{float(ct):.2f}"
-                                        })
+                                if ct is not None and x_fit[0] <= ct <= x_fit[-1]:
+                                    ct_results.append({
+                                        "Group": group,
+                                        "Well": well,
+                                        "Channel": channel_name,
+                                        "Ct": f"{float(ct):.2f}"
+                                    })
                                         # fig.add_annotation(
                                         #     x=ct,
                                         #     y=threshold_value,
