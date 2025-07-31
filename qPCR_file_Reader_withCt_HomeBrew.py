@@ -547,21 +547,21 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                                     channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
                                     above = y > channel_threshold
                                 
-                                    # if any(above):
-                                    #     first_cross = above.idxmax()
-                                    #     if first_cross > 0:
-                                    #         y1, y2 = y[first_cross - 1], y[first_cross]
-                                    #         x1, x2 = x[first_cross - 1], x[first_cross]
-                                    #         ct = x1 + (channel_threshold - y1) * (x2 - x1) / (y2 - y1)
-                                    #     else:
-                                    #         ct = x[first_cross]
+                                    if any(above):
+                                        first_cross = above.idxmax()
+                                        if first_cross > 0:
+                                            y1, y2 = y[first_cross - 1], y[first_cross]
+                                            x1, x2 = x[first_cross - 1], x[first_cross]
+                                            ct = x1 + (channel_threshold - y1) * (x2 - x1) / (y2 - y1)
+                                        else:
+                                            ct = x[first_cross]
                                 
-                                        ct_results.append({
-                                            "Group": group,
-                                            "Well": well,
-                                            "Channel": channel_name,
-                                            "Ct": f"{float(ct):.2f}"
-                                        })
+                                            ct_results.append({
+                                                "Group": group,
+                                                "Well": well,
+                                                "Channel": channel_name,
+                                                "Ct": f"{float(ct):.2f}"
+                                            })
                                     else:
                                         ct_results.append({
                                             "Group": group,
