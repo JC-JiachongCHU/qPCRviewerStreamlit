@@ -556,12 +556,12 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                                         else:
                                             ct = x[first_cross]
                                 
-                                            ct_results.append({
-                                                "Group": group,
-                                                "Well": well,
-                                                "Channel": channel_name,
-                                                "Ct": f"{float(ct):.2f}"
-                                            })
+                                        ct_results.append({
+                                            "Group": group,
+                                            "Well": well,
+                                            "Channel": channel_name,
+                                            "Ct": f"{float(ct):.2f}"
+                                        })
                                     else:
                                         ct_results.append({
                                             "Group": group,
