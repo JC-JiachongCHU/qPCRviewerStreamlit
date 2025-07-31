@@ -660,7 +660,7 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                         plate_matrix.at[r, c] = ct_value
                         
                 if r in plate_matrix.index and c in plate_matrix.columns:
-                    plate_matrix.at[r, c] = float(row["Ct"])
+                    plate_matrix.at[r, c] = ct_value
     
             plate_matrix.sort_index(axis=1, inplace=True)
             plate_matrix.to_excel(writer, sheet_name=str(channel))
