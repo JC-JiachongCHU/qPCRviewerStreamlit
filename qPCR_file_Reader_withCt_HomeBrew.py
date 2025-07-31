@@ -509,7 +509,7 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                     
 
                         if threshold_enabled:
-                            # try:
+                            try:
                             #     channel_threshold = per_channel_thresholds.get(chan_str, 0.13)
                             #     ct_value,ct_std = calculate_ct(x, y, threshold = channel_threshold,return_std=False)
                                 
