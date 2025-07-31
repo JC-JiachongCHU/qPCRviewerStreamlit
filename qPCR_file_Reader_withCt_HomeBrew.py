@@ -49,7 +49,7 @@ def spr_qpcr_background_correction(test_signal):
     return test_signal - np.mean(test_signal[:5]), -1
 
 
-def calculate_ct(x, y, threshold, use_4pl=True, return_std=False):
+def calculate_ct(x, y, threshold, startpoint = 10, use_4pl=True, return_std=False):
     x = np.array(x)
     y = np.array(y)
     
@@ -62,7 +62,7 @@ def calculate_ct(x, y, threshold, use_4pl=True, return_std=False):
 
     if use_4pl:
         try:
-            post_cycle_10 = x >= 10
+            post_cycle_10 = x >= startpoint
             x_fit = x[post_cycle_10]
             y_fit = y[post_cycle_10]
 
@@ -494,7 +494,7 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                                 baseline = y.iloc[:baseline_cycles].mean()
                                 y -= baseline
                             elif baseline_method == "Homebrew Lift-off Fit":
-                                y, _ = spr_qpcr_background_correction(np.array(y))
+                                y, E = spr_qpcr_background_correction(np.array(y))
             
                         x = df["Cycle"].values
                         style = channel_styles[i % len(channel_styles)]
@@ -511,7 +511,7 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                         if threshold_enabled:
                                 channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
                                 try:
-                                    ct_value, ct_std = calculate_ct(x, y, threshold=channel_threshold, use_4pl=True, return_std=True)
+                                    ct_value, ct_std = calculate_ct(x, y, threshold=channel_threshold, startpoint = E, use_4pl=True, return_std=True)
                                     if ct_value is not None:
                                         ct_results.append({
                                             "Group": group,
