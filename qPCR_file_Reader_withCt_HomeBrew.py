@@ -645,10 +645,20 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
             for _, row in channel_df.iterrows():
                 well = row["Well"]
                 match = re.match(r"([A-Z]+)([0-9]+)", well)
+                # if match:
+                #     r, c = match.group(1), int(match.group(2))
+                #     if r in plate_matrix.index and c in plate_matrix.columns:
+                #         plate_matrix.at[r, c] = float(row["Ct"])
                 if match:
                     r, c = match.group(1), int(match.group(2))
                     if r in plate_matrix.index and c in plate_matrix.columns:
-                        plate_matrix.at[r, c] = float(row["Ct"])
+                        ct_raw = str(row["Ct"]).strip()
+                        try:
+                            ct_value = float(ct_raw)
+                        except (ValueError, TypeError):
+                            ct_value = np.nan  # Assign NaN if Ct is not numeric
+                        plate_matrix.at[r, c] = ct_value
+                        
                 if r in plate_matrix.index and c in plate_matrix.columns:
                     plate_matrix.at[r, c] = float(row["Ct"])
     
