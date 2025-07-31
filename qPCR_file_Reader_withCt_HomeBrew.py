@@ -511,7 +511,7 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                         if threshold_enabled:
                                 channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
                                 try:
-                                    ct_value, ct_std = calculate_ct(x, y, threshold=channel_threshold, startpoint = E, use_4pl=True, return_std=True)
+                                    ct_value, ct_std = calculate_ct(x, y, threshold=channel_threshold, startpoint = 10, use_4pl=True, return_std=True)
                                     if ct_value is not None:
                                         ct_results.append({
                                             "Group": group,
