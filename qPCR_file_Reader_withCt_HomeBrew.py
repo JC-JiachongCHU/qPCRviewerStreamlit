@@ -509,66 +509,92 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                     
 
                         if threshold_enabled:
-                            try:
-                            #     channel_threshold = per_channel_thresholds.get(chan_str, 0.13)
-                            #     ct_value,ct_std = calculate_ct(x, y, threshold = channel_threshold,return_std=False)
-                                
-                                # Remove NaNs
-                                valid = ~np.isnan(x) & ~np.isnan(y)
-                                x_fit = np.array(x[valid], dtype=float)
-                                y_fit = np.array(y[valid], dtype=float)
-
-                                post_cycle_10 = x_fit >= 10
-                                x_fit = x_fit[post_cycle_10]
-                                y_fit = y_fit[post_cycle_10]
-                                
-                                if len(x_fit) >= 5:  # ensure enough points to fit
-                                    popt, _ = curve_fit(four_param_logistic, x_fit, y_fit, maxfev=10000)                                 
-                                    channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
-                                    ct = inverse_four_pl(channel_threshold, *popt)
-
-                                if ct is not None and x_fit[0] <= ct <= x_fit[-1]:
-                                    ct_results.append({
-                                        "Group": group,
-                                        "Well": well,
-                                        "Channel": channel_name,
-                                        "Ct": f"{float(ct):.2f}"
-                                    })
-                                        # fig.add_annotation(
-                                        #     x=ct,
-                                        #     y=threshold_value,
-                                        #     text=f"Ct: {ct:.1f}",
-                                        #     showarrow=True,
-                                        #     arrowhead=2,
-                                        #     font=dict(size=10),
-                                        #     bgcolor="white"
-                                        # )
-                            except:
                                 channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
-                                above = y > channel_threshold
-                                
-                                if any(above):
-                                    first_cross = np.argmax(above)
-                                    if first_cross > 0:
-                                        y1, y2 = y[first_cross - 1], y[first_cross]
-                                        x1, x2 = x[first_cross - 1], x[first_cross]
-                                        ct = x1 + (channel_threshold - y1) * (x2 - x1) / (y2 - y1)
+                                try:
+                                    ct_value, ct_std = calculate_ct(x, y, threshold=channel_threshold, use_4pl=True, return_std=True)
+                                    if ct_value is not None:
+                                        ct_results.append({
+                                            "Group": group,
+                                            "Well": well,
+                                            "Channel": channel_name,
+                                            "Ct": f"{ct_value:.2f}"
+                                        })
                                     else:
-                                        ct = x[first_cross]
-                            
-                                    ct_results.append({
-                                        "Group": group,
-                                        "Well": well,
-                                        "Channel": channel_name,
-                                        "Ct": f"{float(ct):.2f}"
-                                    })
-                                else:
+                                        ct_results.append({
+                                            "Group": group,
+                                            "Well": well,
+                                            "Channel": channel_name,
+                                            "Ct": "Undetermined"
+                                        })
+                                except Exception as e:
                                     ct_results.append({
                                         "Group": group,
                                         "Well": well,
                                         "Channel": channel_name,
                                         "Ct": "Undetermined"
                                     })
+    
+                        # if threshold_enabled:
+                        #     try:
+                        #     #     channel_threshold = per_channel_thresholds.get(chan_str, 0.13)
+                        #     #     ct_value,ct_std = calculate_ct(x, y, threshold = channel_threshold,return_std=False)
+                                
+                        #         # Remove NaNs
+                        #         valid = ~np.isnan(x) & ~np.isnan(y)
+                        #         x_fit = np.array(x[valid], dtype=float)
+                        #         y_fit = np.array(y[valid], dtype=float)
+
+                        #         post_cycle_10 = x_fit >= 10
+                        #         x_fit = x_fit[post_cycle_10]
+                        #         y_fit = y_fit[post_cycle_10]
+                                
+                        #         if len(x_fit) >= 5:  # ensure enough points to fit
+                        #             popt, _ = curve_fit(four_param_logistic, x_fit, y_fit, maxfev=10000)                                 
+                        #             channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
+                        #             ct = inverse_four_pl(channel_threshold, *popt)
+
+                        #         if ct is not None and x_fit[0] <= ct <= x_fit[-1]:
+                        #             ct_results.append({
+                        #                 "Group": group,
+                        #                 "Well": well,
+                        #                 "Channel": channel_name,
+                        #                 "Ct": f"{float(ct):.2f}"
+                        #             })
+                        #                 # fig.add_annotation(
+                        #                 #     x=ct,
+                        #                 #     y=threshold_value,
+                        #                 #     text=f"Ct: {ct:.1f}",
+                        #                 #     showarrow=True,
+                        #                 #     arrowhead=2,
+                        #                 #     font=dict(size=10),
+                        #                 #     bgcolor="white"
+                        #                 # )
+                        #     except:
+                        #         channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
+                        #         above = y > channel_threshold
+                                
+                        #         if any(above):
+                        #             first_cross = np.argmax(above)
+                        #             if first_cross > 0:
+                        #                 y1, y2 = y[first_cross - 1], y[first_cross]
+                        #                 x1, x2 = x[first_cross - 1], x[first_cross]
+                        #                 ct = x1 + (channel_threshold - y1) * (x2 - x1) / (y2 - y1)
+                        #             else:
+                        #                 ct = x[first_cross]
+                            
+                        #             ct_results.append({
+                        #                 "Group": group,
+                        #                 "Well": well,
+                        #                 "Channel": channel_name,
+                        #                 "Ct": f"{float(ct):.2f}"
+                        #             })
+                        #         else:
+                        #             ct_results.append({
+                        #                 "Group": group,
+                        #                 "Well": well,
+                        #                 "Channel": channel_name,
+                        #                 "Ct": "Undetermined"
+                        #             })
                                 # above = y > threshold_value
                                 # if any(above):
                                 #     first_cross = above.idxmax()
