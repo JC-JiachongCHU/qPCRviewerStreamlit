@@ -48,6 +48,65 @@ def spr_qpcr_background_correction(test_signal):
     # fallback if no lift-off found
     return test_signal - np.mean(test_signal[:5]), -1
 
+
+def calculate_ct(x, y, threshold, use_4pl=True, return_std=False):
+    x = np.array(x)
+    y = np.array(y)
+    
+    valid = ~np.isnan(x) & ~np.isnan(y)
+    x = x[valid]
+    y = y[valid]
+
+    if len(x) < 3:
+        return (None, None) if return_std else None
+
+    if use_4pl:
+        try:
+            post_cycle_10 = x >= 10
+            x_fit = x[post_cycle_10]
+            y_fit = y[post_cycle_10]
+
+            if len(x_fit) >= 5:
+                popt, pcov = curve_fit(four_param_logistic, x_fit, y_fit, maxfev=10000)
+                ct = inverse_four_pl(threshold, *popt)
+
+                if ct is not None and x_fit[0] <= ct <= x_fit[-1]:
+                    if return_std:
+                        # Estimate gradient numerically
+                        eps = 1e-8
+                        grads = np.zeros(4)
+                        for i in range(4):
+                            p_hi = np.array(popt)
+                            p_lo = np.array(popt)
+                            p_hi[i] += eps
+                            p_lo[i] -= eps
+                            ct_hi = inverse_four_pl(threshold, *p_hi)
+                            ct_lo = inverse_four_pl(threshold, *p_lo)
+                            grads[i] = (ct_hi - ct_lo) / (2 * eps)
+
+                        ct_variance = np.dot(grads.T, np.dot(pcov, grads))
+                        ct_std = np.sqrt(ct_variance) if ct_variance >= 0 else np.nan
+                        return float(ct), float(ct_std)
+                    else:
+                        return float(ct)
+        except:
+            pass
+
+    # Linear interpolation fallback
+    above = y > threshold
+    if not np.any(above):
+        return (None, None) if return_std else None
+
+    idx = np.argmax(above)
+    if idx == 0:
+        ct = float(x[0])
+    else:
+        x1, x2 = x[idx - 1], x[idx]
+        y1, y2 = y[idx - 1], y[idx]
+        ct = x1 + (threshold - y1) * (x2 - x1) / (y2 - y1)
+
+    return (ct, None) if return_std else float(ct)
+
 # timestamp = datetime.datetime.now().strftime("%Y/%m/%d %H:%M")
 version = "v1.1.1"
 
@@ -198,7 +257,7 @@ per_channel_thresholds = {}
 if threshold_enabled:
     st.sidebar.markdown("**Per-Channel Thresholds:**")
     for ch in selected_channels:
-        default_thresh = 1000.0  # you can set any default
+        default_thresh = 0.13  # you can set any default
         per_channel_thresholds[ch] = st.sidebar.number_input(
             f"Threshold for {ch}", min_value=0.0, value=default_thresh, step=100.0, key=f"threshold_{ch}"
         )
@@ -299,47 +358,49 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
 
                             if threshold_enabled:
                                 try:
-                                    # Remove NaNs
-                                    valid = ~np.isnan(x) & ~np.isnan(y)
-                                    x_fit = np.array(x[valid], dtype=float)
-                                    y_fit = np.array(y[valid], dtype=float)
+                                    channel_threshold = per_channel_thresholds.get(chan_str, 0.13)
+                                    ct_value,ct_std = calculate_ct(x, y, threshold = channel_threshold,return_std=False)
+                                #     # Remove NaNs
+                                #     valid = ~np.isnan(x) & ~np.isnan(y)
+                                #     x_fit = np.array(x[valid], dtype=float)
+                                #     y_fit = np.array(y[valid], dtype=float)
 
-                                    post_cycle_10 = x_fit >= 10
-                                    x_fit = x_fit[post_cycle_10]
-                                    y_fit = y_fit[post_cycle_10]
+                                #     post_cycle_10 = x_fit >= 10
+                                #     x_fit = x_fit[post_cycle_10]
+                                #     y_fit = y_fit[post_cycle_10]
                                     
-                                    if len(x_fit) >= 5:  # ensure enough points to fit
-                                        popt, _ = curve_fit(four_param_logistic, x_fit, y_fit, maxfev=10000)
-                                        channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
-                                        ct = inverse_four_pl(channel_threshold, *popt)
-                                        if ct is not None and x_fit[0] <= ct <= x_fit[-1]:
-                                            ct_results.append({
-                                                "Group": group,
-                                                "Well": well,
-                                                "Channel": chan_str if platform == "QuantStudio (QS)" else channel_name,
-                                                "Ct": f"{float(ct):.2f}"
-                                            })
-                                            # fig.add_annotation(
-                                            #     x=ct,
-                                            #     y=threshold_value,
-                                            #     text=f"Ct: {ct:.1f}",
-                                            #     showarrow=True,
-                                            #     arrowhead=2,
-                                            #     font=dict(size=10),
-                                            #     bgcolor="white"
-                                            # )
-                                except:                          
-                                    channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
-                                    above = y > channel_threshold
+                                #     if len(x_fit) >= 5:  # ensure enough points to fit
+                                #         popt, _ = curve_fit(four_param_logistic, x_fit, y_fit, maxfev=10000)
+                                #         channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
+                                #         ct = inverse_four_pl(channel_threshold, *popt)
+                                #         if ct is not None and x_fit[0] <= ct <= x_fit[-1]:
+                                #             ct_results.append({
+                                #                 "Group": group,
+                                #                 "Well": well,
+                                #                 "Channel": chan_str if platform == "QuantStudio (QS)" else channel_name,
+                                #                 "Ct": f"{float(ct):.2f}"
+                                #             })
+                                #             # fig.add_annotation(
+                                #             #     x=ct,
+                                #             #     y=threshold_value,
+                                #             #     text=f"Ct: {ct:.1f}",
+                                #             #     showarrow=True,
+                                #             #     arrowhead=2,
+                                #             #     font=dict(size=10),
+                                #             #     bgcolor="white"
+                                #             # )
+                                # except:                          
+                                #     channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
+                                #     above = y > channel_threshold
                                     
-                                    if any(above):
-                                        first_cross = above.idxmax()
-                                        if first_cross > 0:
-                                            y1, y2 = y[first_cross - 1], y[first_cross]
-                                            x1, x2 = x[first_cross - 1], x[first_cross]
-                                            ct = x1 + (threshold_value - y1) * (x2 - x1) / (y2 - y1)
-                                        else:
-                                            ct = x[first_cross]
+                                #     if any(above):
+                                #         first_cross = above.idxmax()
+                                #         if first_cross > 0:
+                                #             y1, y2 = y[first_cross - 1], y[first_cross]
+                                #             x1, x2 = x[first_cross - 1], x[first_cross]
+                                #             ct = x1 + (threshold_value - y1) * (x2 - x1) / (y2 - y1)
+                                #         else:
+                                #             ct = x[first_cross]
 
                                         ct_results.append({
                                             "Group": group,
@@ -449,19 +510,21 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
 
                         if threshold_enabled:
                             try:
-                                # Remove NaNs
-                                valid = ~np.isnan(x) & ~np.isnan(y)
-                                x_fit = np.array(x[valid], dtype=float)
-                                y_fit = np.array(y[valid], dtype=float)
+                                channel_threshold = per_channel_thresholds.get(chan_str, 0.13)
+                                ct_value,ct_std = calculate_ct(x, y, threshold = channel_threshold,return_std=False)
+                                # # Remove NaNs
+                                # valid = ~np.isnan(x) & ~np.isnan(y)
+                                # x_fit = np.array(x[valid], dtype=float)
+                                # y_fit = np.array(y[valid], dtype=float)
 
-                                post_cycle_10 = x_fit >= 10
-                                x_fit = x_fit[post_cycle_10]
-                                y_fit = y_fit[post_cycle_10]
+                                # post_cycle_10 = x_fit >= 10
+                                # x_fit = x_fit[post_cycle_10]
+                                # y_fit = y_fit[post_cycle_10]
                                 
-                                if len(x_fit) >= 5:  # ensure enough points to fit
-                                    popt, _ = curve_fit(four_param_logistic, x_fit, y_fit, maxfev=10000)                                 
-                                    channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
-                                    ct = inverse_four_pl(channel_threshold, *popt)
+                                # if len(x_fit) >= 5:  # ensure enough points to fit
+                                #     popt, _ = curve_fit(four_param_logistic, x_fit, y_fit, maxfev=10000)                                 
+                                #     channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
+                                #     ct = inverse_four_pl(channel_threshold, *popt)
 
                                     if ct is not None and x_fit[0] <= ct <= x_fit[-1]:
                                         ct_results.append({
