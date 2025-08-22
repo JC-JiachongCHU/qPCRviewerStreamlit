@@ -140,7 +140,124 @@ uploaded_files = st.file_uploader("Upload Bio-Rad CSVs (1 per channel)", type=["
 if "groups" not in st.session_state:
     st.session_state["groups"] = {}
 
-# Group assignment
+# # Group assignment
+# st.subheader("Step 1: Assign Wells to a Group")
+# group_name = st.text_input("Group Name", "Group 1")
+
+# preset_colors = {
+#     "Red": "#FF0000", "Green": "#28A745", "Blue": "#007BFF", "Orange": "#FD7E14",
+#     "Purple": "#6F42C1", "Brown": "#8B4513", "Black": "#000000", "Gray": "#6C757D", "Custom HEX": None
+# }
+# selected_color_name = st.selectbox("Select Group Color", list(preset_colors.keys()))
+# if selected_color_name == "Custom HEX":
+#     group_color = st.color_picker("Pick a Custom Color", "#FF0000")
+# else:
+#     group_color = preset_colors[selected_color_name]
+
+# selected_wells = []
+
+# # Quick select
+# st.write("Quick Select:")
+# col1, col2 = st.columns(2)
+# selected_row = col1.selectbox("Select Entire Row", ["None"] + rows)
+# selected_col = col2.selectbox("Select Entire Column", ["None"] + [str(c) for c in cols])
+# if selected_row != "None":
+#     selected_wells.extend([f"{selected_row}{c}" for c in cols])
+# if selected_col != "None":
+#     selected_wells.extend([f"{r}{selected_col}" for r in rows])
+
+# select_all = st.checkbox("Select All Wells")
+
+# # Manual well selection
+# st.write("Select Wells (click checkboxes):")
+# for r in rows:
+#     cols_container = st.columns(len(cols))
+#     for c, col in zip(cols, cols_container):
+#         well = f"{r}{c}"
+#         default_checked = select_all or False
+#         if col.checkbox(well, key=f"{group_name}_{well}", value=default_checked):
+#             selected_wells.append(well)
+
+# selected_wells = sorted(set(selected_wells), key=lambda x: (x[0], int(x[1:])))
+
+# if st.button("Add Group"):
+#     if group_name and selected_wells:
+#         st.session_state["groups"][group_name] = {"color": group_color, "wells": selected_wells}
+
+# # Display groups
+# st.subheader("Current Groups")
+# for group, info in st.session_state["groups"].items():
+#     st.markdown(f"**{group}** ({info['color']}): {', '.join(info['wells'])}")
+
+# # Delete group
+# st.subheader("Delete a Group")
+# if st.session_state["groups"]:
+#     group_to_delete = st.selectbox("Select Group to Delete", list(st.session_state["groups"].keys()))
+#     if st.button("Delete Group"):
+#         st.session_state["groups"].pop(group_to_delete, None)
+#         st.success(f"Deleted group: {group_to_delete}")
+# else:
+#     st.info("No groups available to delete.")
+
+
+# --- Replicates controls ---
+st.subheader("Replicates (optional)")
+use_replicates = st.toggle("Enable Replicate Selection", value=False,
+                           help="Auto-select all wells in the same half-plate block.")
+replicate_mode = st.selectbox(
+    "Replicate Pattern",
+    ["Left-Right (by columns)", "Top-Down (by rows)"],
+    disabled=not use_replicates,
+    help="Tick any well to auto-select the entire half-plate block it belongs to."
+)
+
+# Helpers
+row_to_idx = {r: i for i, r in enumerate(rows)}
+idx_to_row = {i: r for i, r in enumerate(rows)}
+nrows = len(rows)
+ncols = len(cols)
+
+def block_cols_for(col_index_zero_based: int):
+    """Return the list of columns (ints) in the same half as the given 0-based column index."""
+    half = ncols // 2  # e.g., 12->6, 24->12
+    if col_index_zero_based < half:
+        return list(range(1, half + 1))       # left half: 1..half
+    else:
+        return list(range(half + 1, ncols + 1))  # right half: (half+1)..ncols
+
+def block_rows_for(row_index_zero_based: int):
+    """Return the list of row labels in the same half as the given 0-based row index."""
+    half = nrows // 2  # e.g., 8->4, 16->8
+    if row_index_zero_based < half:
+        return [idx_to_row[i] for i in range(0, half)]          # top half
+    else:
+        return [idx_to_row[i] for i in range(half, nrows)]      # bottom half
+
+def replicate_block_wells(well: str):
+    """
+    Given 'A1', return all wells in the same half-plate block per replicate_mode.
+    - Left-Right: same row, columns in same half? (Clarified spec says entire half-plate block, all rows.)
+      Based on your definition, we select ALL rows within that column half.
+    - Top-Down: ALL columns within that row half.
+    """
+    r = well[0]
+    c = int(well[1:])
+    ri = row_to_idx[r]
+    ci0 = c - 1  # zero-based
+
+    if not use_replicates:
+        return [well]
+
+    if replicate_mode.startswith("Left-Right"):
+        cols_in_block = block_cols_for(ci0)
+        # Entire half-plate block: all rows × those columns
+        return [f"{rr}{cc}" for rr in rows for cc in cols_in_block]
+    else:  # Top-Down
+        rows_in_block = block_rows_for(ri)
+        # Entire half-plate block: those rows × all columns
+        return [f"{rr}{cc}" for rr in rows_in_block for cc in cols]
+
+# --- Group assignment ---
 st.subheader("Step 1: Assign Wells to a Group")
 group_name = st.text_input("Group Name", "Group 1")
 
@@ -154,6 +271,11 @@ if selected_color_name == "Custom HEX":
 else:
     group_color = preset_colors[selected_color_name]
 
+# Track checkbox states across reruns to detect newly-checked wells
+prev_key = f"__prev_checks__::{group_name}"
+if prev_key not in st.session_state:
+    st.session_state[prev_key] = {}
+
 selected_wells = []
 
 # Quick select
@@ -161,28 +283,77 @@ st.write("Quick Select:")
 col1, col2 = st.columns(2)
 selected_row = col1.selectbox("Select Entire Row", ["None"] + rows)
 selected_col = col2.selectbox("Select Entire Column", ["None"] + [str(c) for c in cols])
+
+quick_selected = set()
 if selected_row != "None":
-    selected_wells.extend([f"{selected_row}{c}" for c in cols])
+    quick_selected.update([f"{selected_row}{c}" for c in cols])
 if selected_col != "None":
-    selected_wells.extend([f"{r}{selected_col}" for r in rows])
+    quick_selected.update([f"{r}{selected_col}" for r in rows])
 
 select_all = st.checkbox("Select All Wells")
 
-# Manual well selection
+# Pre-seed states for quick selects or 'select all'
+def ensure_checked(key):
+    if key not in st.session_state:
+        st.session_state[key] = True
+
+if select_all:
+    for r in rows:
+        for c in cols:
+            ensure_checked(f"{group_name}_{r}{c}")
+else:
+    for w in quick_selected:
+        ensure_checked(f"{group_name}_{w}")
+
+# Manual well selection with auto-replicates
 st.write("Select Wells (click checkboxes):")
+current_checks = {}
+
 for r in rows:
     cols_container = st.columns(len(cols))
     for c, col in zip(cols, cols_container):
         well = f"{r}{c}"
-        default_checked = select_all or False
-        if col.checkbox(well, key=f"{group_name}_{well}", value=default_checked):
+        key = f"{group_name}_{well}"
+        default_checked = bool(st.session_state.get(key, False))
+        checked = col.checkbox(well, key=key, value=default_checked)
+        current_checks[well] = checked
+        if checked:
             selected_wells.append(well)
 
+# Detect newly-checked wells relative to previous state
+prev_checks = st.session_state.get(prev_key, {})
+newly_checked = [w for w, v in current_checks.items() if v and not prev_checks.get(w, False)]
+
+# If any newly-checked wells, auto-check every well in its replicate block and rerun
+auto_extended = False
+for w in newly_checked:
+    for partner in replicate_block_wells(w):
+        pkey = f"{group_name}_{partner}"
+        if not st.session_state.get(pkey, False):
+            st.session_state[pkey] = True
+            auto_extended = True
+
+# Snapshot current state
+st.session_state[prev_key] = current_checks
+
+if auto_extended:
+    st.rerun()
+
+# After auto-extension, rebuild selected_wells from state
+selected_wells = [
+    f"{r}{c}"
+    for r in rows for c in cols
+    if st.session_state.get(f"{group_name}_{r}{c}", False)
+]
+
+# Sort wells by row then column
 selected_wells = sorted(set(selected_wells), key=lambda x: (x[0], int(x[1:])))
 
+# Add group button
 if st.button("Add Group"):
     if group_name and selected_wells:
         st.session_state["groups"][group_name] = {"color": group_color, "wells": selected_wells}
+        st.success(f"Added {group_name}: {len(selected_wells)} wells")
 
 # Display groups
 st.subheader("Current Groups")
@@ -198,6 +369,9 @@ if st.session_state["groups"]:
         st.success(f"Deleted group: {group_to_delete}")
 else:
     st.info("No groups available to delete.")
+
+
+
 
 # Plot settings
 # st.sidebar.subheader("Plot Settings")
