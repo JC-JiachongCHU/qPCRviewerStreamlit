@@ -142,8 +142,6 @@ if "groups" not in st.session_state:
 
 # ==== choose groups ====
 
-# ==== choose groups ====
-
 # ---------- Replicates controls ----------
 st.subheader("Replicates (optional)")
 use_replicates = st.toggle(
@@ -153,9 +151,10 @@ use_replicates = st.toggle(
 )
 replicate_mode = st.selectbox(
     "Replicate Pattern",
-    ["Left-Right (paired)", "Top-Down (paired)", "Neighbors (4-way)"],
+    ["Left-Right (paired across halves)", "Top-Down (paired across halves)",
+     "Neighbors (horizontal pair)", "Neighbors (vertical pair)"],
     disabled=not use_replicates,
-    help="Left-Right: A1↔A7 (96) or A1↔A13 (384). Top-Down: A1↔E1 (96) or A1↔I1 (384)."
+    help="Examples: LR A1↔A7 (96) / A1↔A13 (384); TD A1↔E1 (96) / A1↔I1 (384); Horz A1↔A2; Vert A1↔B1."
 )
 
 # ---------- Helpers ----------
@@ -169,49 +168,47 @@ idx_to_row = {i: r for i, r in enumerate(rows)}
 col_min, col_max = min(cols), max(cols)
 
 def _lr_pair(well: str):
-    """Left-Right pair across plate halves on the same row."""
+    """Left-Right pair across plate halves on the same row (e.g., A1↔A7 for 96)."""
     r = well[0]
     c = int(well[1:])
     half = ncols // 2
-    if c <= half:
-        partner_c = c + half
-    else:
-        partner_c = c - half
+    partner_c = c + half if c <= half else c - half
     return [f"{r}{partner_c}"] if 1 <= partner_c <= ncols else []
 
 def _td_pair(well: str):
-    """Top-Down pair across plate halves on the same column."""
+    """Top-Down pair across plate halves on the same column (e.g., A1↔E1 for 96)."""
     r = well[0]
     c = int(well[1:])
     ri = row_to_idx[r]
     half = nrows // 2
-    if ri < half:
-        partner_ri = ri + half
-    else:
-        partner_ri = ri - half
+    partner_ri = ri + half if ri < half else ri - half
     return [f"{idx_to_row[partner_ri]}{c}"] if 0 <= partner_ri < nrows else []
 
-def _neighbors4(well: str):
-    """Immediate orthogonal neighbors."""
+def _neighbors_h_pair(well: str):
+    """Neighbors horizontal PAIR: (1↔2), (3↔4), ... within the same row."""
+    r = well[0]
+    c = int(well[1:])
+    partner_c = c + 1 if (c % 2 == 1) else c - 1
+    return [f"{r}{partner_c}"] if 1 <= partner_c <= ncols else []
+
+def _neighbors_v_pair(well: str):
+    """Neighbors vertical PAIR: (A↔B), (C↔D), ... within the same column."""
     r = well[0]
     c = int(well[1:])
     ri = row_to_idx[r]
-    out = []
-    if c - 1 >= col_min: out.append(f"{r}{c-1}")
-    if c + 1 <= col_max: out.append(f"{r}{c+1}")
-    if ri - 1 >= 0:      out.append(f"{idx_to_row[ri-1]}{c}")
-    if ri + 1 < nrows:   out.append(f"{idx_to_row[ri+1]}{c}")
-    return out
+    partner_ri = ri + 1 if (ri % 2 == 0) else ri - 1
+    return [f"{idx_to_row[partner_ri]}{c}"] if 0 <= partner_ri < nrows else []
 
 def replicate_partners(well: str):
     if not use_replicates:
         return []
     if replicate_mode.startswith("Left-Right"):
         return _lr_pair(well)
-    elif replicate_mode.startswith("Top-Down"):
+    if replicate_mode.startswith("Top-Down"):
         return _td_pair(well)
-    else:
-        return _neighbors4(well)
+    if "horizontal" in replicate_mode:
+        return _neighbors_h_pair(well)
+    return _neighbors_v_pair(well)  # "Neighbors (vertical pair)"
 
 # ---------- Group assignment ----------
 st.subheader("Step 1: Assign Wells to a Group")
@@ -245,7 +242,7 @@ if selected_col != "None":
 
 # ---------- Replicate callback ----------
 def _on_checkbox_change(well: str):
-    """Mirror the clicked well's state to its replicate partners (pair or neighbors)."""
+    """Mirror the clicked well's state to its replicate partner(s) (pair modes)."""
     if st.session_state["__suppress_rep_cb__"] or not use_replicates:
         return
     key = f"{safe_group_key}_{well}"
@@ -254,7 +251,7 @@ def _on_checkbox_change(well: str):
     try:
         for partner in replicate_partners(well):
             pkey = f"{safe_group_key}_{partner}"
-            # Only set if partner checkbox key already exists (avoids Streamlit exceptions during render)
+            # Key exists because all checkboxes are rendered; guard anyway:
             if pkey in st.session_state:
                 st.session_state[pkey] = state
     finally:
