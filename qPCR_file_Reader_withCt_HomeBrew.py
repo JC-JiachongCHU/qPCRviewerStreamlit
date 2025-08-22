@@ -235,9 +235,15 @@ normalize_to_rox = st.sidebar.checkbox("Normalize fluorescence to ROX channel")
 # Baseline, Log Y, Threshold
 st.sidebar.subheader("Step 3: Baseline Settings")
 use_baseline = st.sidebar.toggle("Apply Baseline Subtraction", value=False)
-baseline_method = st.sidebar.radio("Baseline Method", ["Average of N cycles", "Homebrew Lift-off Fit"],index = 0)
+
+baseline_method = st.sidebar.radio("Baseline Method",["Average of N cycles", "Homebrew Lift-off Fit"],index=0)
+
 if use_baseline and baseline_method == "Average of N cycles":
-    baseline_cycles = st.sidebar.number_input("Use average RFU of first N cycles", min_value=1, max_value=20, value=10)
+    # Choose where to start averaging (3–15 is a typical safe range)
+    baseline_start = st.sidebar.number_input("Baseline start cycle",min_value=3,max_value=15,value=3,step=1)
+
+    # Choose how many cycles to average
+    baseline_cycles = st.sidebar.number_input("Number of cycles to average",min_value=1,max_value=20,value=10,step=1)
 
 log_y = st.sidebar.toggle("Use Semilog Y-axis (log scale)")
 
@@ -273,6 +279,7 @@ channel_styles = [
 
 
 ct_results = []
+
 # Plotting
 if uploaded_files and st.sidebar.button("Plot Curves"):
     fig = go.Figure()
@@ -356,7 +363,7 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
         
                     if use_baseline:
                         if baseline_method == "Average of N cycles":
-                            baseline = y.iloc[:baseline_cycles].mean()
+                            baseline = y.iloc[baseline_start-1 : baseline_start-1+baseline_cycles].mean()
                             y -= baseline
                         elif baseline_method == "Homebrew Lift-off Fit":
                             y, E = spr_qpcr_background_correction(np.array(y))
@@ -507,88 +514,88 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
 # ------------------------
 # Debug Section - Heatmap
 # ------------------------
-st.sidebar.subheader("[Debug] Heatmap")
-enable_debug_heatmap = st.sidebar.checkbox("Enable Heatmap Debug Mode")
-if enable_debug_heatmap:
-    st.subheader("Debug Heatmap of Average Fluorescence")
+# st.sidebar.subheader("[Debug] Heatmap")
+# enable_debug_heatmap = st.sidebar.checkbox("Enable Heatmap Debug Mode")
+# if enable_debug_heatmap:
+#     st.subheader("Debug Heatmap of Average Fluorescence")
 
-    debug_channel = st.sidebar.selectbox("Select Channel for Heatmap", channel_options)
-    debug_cycle_count = st.sidebar.number_input("Number of Cycles to Average", min_value=1, max_value=100, value=20)
+#     debug_channel = st.sidebar.selectbox("Select Channel for Heatmap", channel_options)
+#     debug_cycle_count = st.sidebar.number_input("Number of Cycles to Average", min_value=1, max_value=100, value=20)
 
-    heatmap_matrix = None  # initialize to check later
+#     heatmap_matrix = None  # initialize to check later
 
-    if platform == "QuantStudio (QS)" and uploaded_files:
-        df = pd.read_excel(uploaded_files[0][1]) if uploaded_files[0][1].name.endswith("xlsx") else pd.read_csv(uploaded_files[0][1])
-        df = df[df["Well Position"] != "Well Position"]
-        df.iloc[:, 5:] = df.iloc[:, 5:].apply(pd.to_numeric, errors='coerce')
-        rfu_cols = [col for col in df.columns if col.startswith("X")]
-        debug_chan_idx = int(debug_channel) - 1
+#     if platform == "QuantStudio (QS)" and uploaded_files:
+#         df = pd.read_excel(uploaded_files[0][1]) if uploaded_files[0][1].name.endswith("xlsx") else pd.read_csv(uploaded_files[0][1])
+#         df = df[df["Well Position"] != "Well Position"]
+#         df.iloc[:, 5:] = df.iloc[:, 5:].apply(pd.to_numeric, errors='coerce')
+#         rfu_cols = [col for col in df.columns if col.startswith("X")]
+#         debug_chan_idx = int(debug_channel) - 1
 
-        detected_wells = df["Well Position"].dropna().unique()
-        rows_used = sorted(set(w[0] for w in detected_wells if isinstance(w, str)))
-        cols_used = sorted(set(int(w[1:]) for w in detected_wells if isinstance(w, str) and w[1:].isdigit()))
-        heatmap_matrix = pd.DataFrame(np.nan, index=rows_used, columns=cols_used)
+#         detected_wells = df["Well Position"].dropna().unique()
+#         rows_used = sorted(set(w[0] for w in detected_wells if isinstance(w, str)))
+#         cols_used = sorted(set(int(w[1:]) for w in detected_wells if isinstance(w, str) and w[1:].isdigit()))
+#         heatmap_matrix = pd.DataFrame(np.nan, index=rows_used, columns=cols_used)
 
-        for well in detected_wells:
-            sub_df = df[df["Well Position"] == well].sort_values(by=df.columns[1])
-            if debug_chan_idx < len(rfu_cols):
-                y = sub_df[rfu_cols[debug_chan_idx]].iloc[:debug_cycle_count]
-                avg_val = y.mean()
-                match = re.match(r"([A-Z]+)([0-9]+)", well)
-                if match:
-                    r, c = match.group(1), int(match.group(2))
-                    if r in plate_matrix.index and c in plate_matrix.columns:
-                        plate_matrix.at[r, c] = float(row["Ct"])
-                if r in heatmap_matrix.index and c in heatmap_matrix.columns:
-                    heatmap_matrix.loc[r, c] = avg_val
+#         for well in detected_wells:
+#             sub_df = df[df["Well Position"] == well].sort_values(by=df.columns[1])
+#             if debug_chan_idx < len(rfu_cols):
+#                 y = sub_df[rfu_cols[debug_chan_idx]].iloc[:debug_cycle_count]
+#                 avg_val = y.mean()
+#                 match = re.match(r"([A-Z]+)([0-9]+)", well)
+#                 if match:
+#                     r, c = match.group(1), int(match.group(2))
+#                     if r in plate_matrix.index and c in plate_matrix.columns:
+#                         plate_matrix.at[r, c] = float(row["Ct"])
+#                 if r in heatmap_matrix.index and c in heatmap_matrix.columns:
+#                     heatmap_matrix.loc[r, c] = avg_val
 
-    elif platform == "Bio-Rad" and uploaded_files:
-        match_key = channel_name_map.get(debug_channel, debug_channel.lower())
-        matched_file = next((f for f in uploaded_files if match_key.lower() in f.name.lower()), None)
-        if matched_file:
-            df = pd.read_csv(matched_file)
-            df.columns = df.columns.str.strip()
-            df = df.loc[:, ~df.columns.str.contains("Unnamed")]
-            detected_wells = [c for c in df.columns if isinstance(c, str) and len(c) >= 2 and c[0].isalpha() and c[1:].isdigit()]
-            rows_used = sorted(set(w[0] for w in detected_wells))
-            cols_used = sorted(set(int(w[1:]) for w in detected_wells))
-            heatmap_matrix = pd.DataFrame(np.nan, index=rows_used, columns=cols_used)
+#     elif platform == "Bio-Rad" and uploaded_files:
+#         match_key = channel_name_map.get(debug_channel, debug_channel.lower())
+#         matched_file = next((f for f in uploaded_files if match_key.lower() in f.name.lower()), None)
+#         if matched_file:
+#             df = pd.read_csv(matched_file)
+#             df.columns = df.columns.str.strip()
+#             df = df.loc[:, ~df.columns.str.contains("Unnamed")]
+#             detected_wells = [c for c in df.columns if isinstance(c, str) and len(c) >= 2 and c[0].isalpha() and c[1:].isdigit()]
+#             rows_used = sorted(set(w[0] for w in detected_wells))
+#             cols_used = sorted(set(int(w[1:]) for w in detected_wells))
+#             heatmap_matrix = pd.DataFrame(np.nan, index=rows_used, columns=cols_used)
 
-            for well in detected_wells:
-                y = df[well].iloc[:debug_cycle_count]
-                avg_val = y.mean()
-                match = re.match(r"([A-Z]+)([0-9]+)", well)
-                if match:
-                    r, c = match.group(1), int(match.group(2))
-                    if r in plate_matrix.index and c in plate_matrix.columns:
-                        plate_matrix.at[r, c] = float(row["Ct"])
+#             for well in detected_wells:
+#                 y = df[well].iloc[:debug_cycle_count]
+#                 avg_val = y.mean()
+#                 match = re.match(r"([A-Z]+)([0-9]+)", well)
+#                 if match:
+#                     r, c = match.group(1), int(match.group(2))
+#                     if r in plate_matrix.index and c in plate_matrix.columns:
+#                         plate_matrix.at[r, c] = float(row["Ct"])
 
 
-    if heatmap_matrix is not None:
-        # Plot heatmap
-        rows_used = list(heatmap_matrix.index)
-        cols_used = list(heatmap_matrix.columns)
-        n_rows, n_cols = len(rows_used), len(cols_used)
-        cell_size = 0.6
-        fig, ax = plt.subplots(figsize=(n_cols * cell_size, n_rows * cell_size))
-        im = ax.imshow(heatmap_matrix.values.astype(float), cmap='viridis', aspect='equal')
+#     if heatmap_matrix is not None:
+#         # Plot heatmap
+#         rows_used = list(heatmap_matrix.index)
+#         cols_used = list(heatmap_matrix.columns)
+#         n_rows, n_cols = len(rows_used), len(cols_used)
+#         cell_size = 0.6
+#         fig, ax = plt.subplots(figsize=(n_cols * cell_size, n_rows * cell_size))
+#         im = ax.imshow(heatmap_matrix.values.astype(float), cmap='viridis', aspect='equal')
 
-        ax.set_xticks(np.arange(len(cols_used)))
-        ax.set_yticks(np.arange(len(rows_used)))
-        ax.set_xticklabels(cols_used)
-        ax.set_yticklabels(rows_used)
-        plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+#         ax.set_xticks(np.arange(len(cols_used)))
+#         ax.set_yticks(np.arange(len(rows_used)))
+#         ax.set_xticklabels(cols_used)
+#         ax.set_yticklabels(rows_used)
+#         plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
 
-        for i in range(n_rows):
-            for j in range(n_cols):
-                value = heatmap_matrix.iloc[i, j]
-                if not np.isnan(value):
-                    ax.text(j, i, f"{value:.1f}", ha="center", va="center",
-                            color="white" if value > np.nanmax(heatmap_matrix.values)/2 else "black",
-                            fontsize=5)
+#         for i in range(n_rows):
+#             for j in range(n_cols):
+#                 value = heatmap_matrix.iloc[i, j]
+#                 if not np.isnan(value):
+#                     ax.text(j, i, f"{value:.1f}", ha="center", va="center",
+#                             color="white" if value > np.nanmax(heatmap_matrix.values)/2 else "black",
+#                             fontsize=5)
 
-        ax.set_title(f"Average RFU (First {debug_cycle_count} Cycles) - {debug_channel}")
-        fig.colorbar(im, ax=ax)
-        st.pyplot(fig)
-    else:
-        st.warning("No heatmap data available. Please check file format or platform selection.")
+#         ax.set_title(f"Average RFU (First {debug_cycle_count} Cycles) - {debug_channel}")
+#         fig.colorbar(im, ax=ax)
+#         st.pyplot(fig)
+#     else:
+#         st.warning("No heatmap data available. Please check file format or platform selection.")
