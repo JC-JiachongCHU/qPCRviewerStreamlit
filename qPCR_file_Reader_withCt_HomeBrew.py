@@ -313,40 +313,40 @@ for r in rows:
     cols_container = st.columns(len(cols))
     for c, col in zip(cols, cols_container):
         well = f"{r}{c}"
-        key = f"{group_name}_{well}"
+        key = f"{safe_group_key}_{well}"   # <-- use safe key
         default_checked = bool(st.session_state.get(key, False))
         checked = col.checkbox(well, key=key, value=default_checked)
         current_checks[well] = checked
-        if checked:
-            selected_wells.append(well)
 
-# Detect newly-checked wells relative to previous state
-prev_checks = st.session_state.get(prev_key, {})
+# Detect newly-checked wells relative to previous state snapshot
+prev_key = f"__prev_checks__::{safe_group_key}"
+if prev_key not in st.session_state:
+    st.session_state[prev_key] = {}
+prev_checks = st.session_state[prev_key]
 newly_checked = [w for w, v in current_checks.items() if v and not prev_checks.get(w, False)]
 
-# If any newly-checked wells, auto-check every well in its replicate block and rerun
+# Auto-extend selection to replicate block, but ONLY set state for checkboxes that exist this run
 auto_extended = False
 for w in newly_checked:
     for partner in replicate_block_wells(w):
-        pkey = f"{group_name}_{partner}"
-        if not st.session_state.get(pkey, False):
+        pkey = f"{safe_group_key}_{partner}"
+        # Guarded write: only set if this widget key was created in THIS run
+        if pkey in st.session_state and not st.session_state.get(pkey, False):
             st.session_state[pkey] = True
             auto_extended = True
 
-# Snapshot current state
+# Snapshot after processing
 st.session_state[prev_key] = current_checks
 
 if auto_extended:
     st.rerun()
 
-# After auto-extension, rebuild selected_wells from state
+# Build selected_wells from existing widget states
 selected_wells = [
     f"{r}{c}"
     for r in rows for c in cols
-    if st.session_state.get(f"{group_name}_{r}{c}", False)
+    if st.session_state.get(f"{safe_group_key}_{r}{c}", False)
 ]
-
-# Sort wells by row then column
 selected_wells = sorted(set(selected_wells), key=lambda x: (x[0], int(x[1:])))
 
 # Add group button
