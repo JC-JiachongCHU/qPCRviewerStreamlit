@@ -260,6 +260,12 @@ def replicate_block_wells(well: str):
 # --- Group assignment ---
 st.subheader("Step 1: Assign Wells to a Group")
 group_name = st.text_input("Group Name", "Group 1")
+def _safe_key(s: str) -> str:
+    # keep letters/numbers/underscore; collapse others to "_"
+    k = re.sub(r'[^A-Za-z0-9_]+', '_', s).strip('_')
+    return k or "Group_1"
+
+safe_group_key = _safe_key(group_name)
 
 preset_colors = {
     "Red": "#FF0000", "Green": "#28A745", "Blue": "#007BFF", "Orange": "#FD7E14",
