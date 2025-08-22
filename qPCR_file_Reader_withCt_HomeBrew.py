@@ -107,11 +107,13 @@ def calculate_ct(x, y, threshold, startpoint = 10, use_4pl=True, return_std=Fals
 
     return (ct, None) if return_std else float(ct)
 
+
+
 # timestamp = datetime.datetime.now().strftime("%Y/%m/%d %H:%M")
-version = "v1.1.1"
+version = "v1.2.0"
 
 st.set_page_config(layout="wide")
-st.title("qPCR Viewer - Supports QuantStudio & Bio-Rad")
+st.title("qPCR Viewer - Supports Bio-Rad")
 st.markdown(f"**Version:** {version}")
 # st.markdown(f"**Last updated:** {timestamp}")
 st.write("Contact JIACHONG CHU for questions.")
@@ -128,16 +130,11 @@ else:
 well_names = [f"{r}{c}" for r in rows for c in cols]
 
 # Choose platform
-platform = st.radio("Select qPCR Platform", ["QuantStudio (QS)", "Bio-Rad"], index=1)
+platform = st.radio("Select qPCR Platform", ["Bio-Rad"], index=0)
 
 # Upload files
 uploaded_files = []
-if platform == "QuantStudio (QS)":
-    uploaded_file = st.file_uploader("Upload QuantStudio xlsx or csv", type=["xlsx", "csv"])
-    if uploaded_file:
-        uploaded_files.append(("QS", uploaded_file))
-else:
-    uploaded_files = st.file_uploader("Upload Bio-Rad CSVs (1 per channel)", type=["csv"], accept_multiple_files=True)
+uploaded_files = st.file_uploader("Upload Bio-Rad CSVs (1 per channel)", type=["csv"], accept_multiple_files=True)
 
 # Group state
 if "groups" not in st.session_state:
@@ -216,23 +213,17 @@ if color_mode == "Colormap":
         "Select a Colormap", ["jet", "viridis", "plasma", "cividis", "cool", "hot", "spring", "summer", "winter"]
     )
     
-if platform == "QuantStudio (QS)":
-    channel_options = [str(i) for i in range(1, 13)]
-    default_channels = ["1", "2"]
-else:
-    channel_options = ["FAM", "HEX", "Cy5", "Cy5.5", "ROX", "SYBR"]
-    default_channels = ["FAM", "HEX"]
 
+channel_options = ["FAM", "HEX", "Cy5", "Cy5.5", "ROX", "SYBR"]
+default_channels = ["FAM", "HEX"]
 
-if platform == "Bio-Rad":
-    st.sidebar.subheader("Deconvolution Settings (Bio-Rad only)")
-    enable_deconvolution = st.sidebar.checkbox("Enable Deconvolution for Bio-Rad")
-    if enable_deconvolution:
-        deconv_target_channel = st.sidebar.selectbox("Channel to Deconvolve", channel_options, index=2)   # e.g. Cy5
-        deconv_correction_channel = st.sidebar.selectbox("Correction Channel", channel_options, index=3)   # e.g. Cy5.5
-        alpha_value = st.sidebar.number_input("Alpha Multiplier (α)", min_value=-10.0, max_value=10.0, value=0.07, step=0.01)
-else:
-    enable_deconvolution = False    
+st.sidebar.subheader("Deconvolution Settings (Bio-Rad only)")
+enable_deconvolution = st.sidebar.checkbox("Enable Deconvolution for Bio-Rad")
+if enable_deconvolution:
+    deconv_target_channel = st.sidebar.selectbox("Channel to Deconvolve", channel_options, index=2)   # e.g. Cy5
+    deconv_correction_channel = st.sidebar.selectbox("Correction Channel", channel_options, index=3)   # e.g. Cy5.5
+    alpha_value = st.sidebar.number_input("Alpha Multiplier (α)", min_value=-10.0, max_value=10.0, value=0.07, step=0.01)
+
     
 selected_channels = st.sidebar.multiselect("Select Channels to Plot", channel_options, default=default_channels)
 
@@ -286,26 +277,51 @@ ct_results = []
 if uploaded_files and st.sidebar.button("Plot Curves"):
     fig = go.Figure()
 
-    if platform == "QuantStudio (QS)":
-        filetype = uploaded_files[0][1].name.split(".")[-1].lower()
-        if filetype == "xlsx":
-            df = pd.read_excel(uploaded_files[0][1])
-        else:
-            df = pd.read_csv(uploaded_files[0][1])
+    rox_df = None
+    if normalize_to_rox:
+        rox_file = next((f for f in uploaded_files if "rox" in f.name.lower()), None)
+        if rox_file:
+            rox_df = pd.read_csv(rox_file)
 
-        df = df[df["Well Position"] != "Well Position"]
-        df.iloc[:, 5:] = df.iloc[:, 5:].apply(pd.to_numeric, errors='coerce')
-        rfu_cols = [col for col in df.columns if col.startswith("X")]
-        cycle_col = next((col for col in df.columns if "cycle" in col.lower()), "Cycle Number")
+    for i, channel_name in enumerate(selected_channels):
+        chan_str = channel_name 
+        match_key = channel_name_map.get(channel_name, channel_name.lower())
+        matched_file = next((f for f in uploaded_files if match_key.lower() in f.name.lower()), None)
+        if not matched_file:
+            st.warning(f"No file found for channel: {channel_name}")
+            continue
+
+        df = pd.read_csv(matched_file)
+        df.columns = df.columns.str.strip()
+        df = df.loc[:, ~df.columns.str.contains("Unnamed")]
+
+         # ======= DECONVOLUTION: Load correction file ONCE here =======
+        df_corr = None
+        if enable_deconvolution and channel_name == deconv_target_channel:
+            match_key_corr = channel_name_map.get(deconv_correction_channel, deconv_correction_channel.lower())
+            corr_file = next((f for f in uploaded_files if match_key_corr.lower() in f.name.lower()), None)
+            if corr_file:
+                try:
+                    df_corr = pd.read_csv(corr_file, comment='#')
+                    df_corr.columns = df_corr.columns.str.strip()
+                    df_corr = df_corr.loc[:, ~df_corr.columns.str.contains("Unnamed")]
+    
+                    if df_corr.empty:
+                        st.warning(f"Correction file '{corr_file.name}' is empty. Deconvolution skipped for channel {channel_name}.")
+                        df_corr = None
+                    elif (df_corr.drop(columns='Cycle', errors='ignore').sum().sum() == 0):
+                        st.warning(f"Correction file '{corr_file.name}' has all-zero data. Deconvolution skipped for channel {channel_name}.")
+                        df_corr = None
+                except pd.errors.EmptyDataError:
+                    st.warning(f"Correction file '{corr_file.name}' is empty or invalid. Deconvolution skipped for channel {channel_name}.")
+                    df_corr = None
+            else:
+                st.warning(f"Correction channel file not found: {deconv_correction_channel}")
 
         for group, info in st.session_state["groups"].items():
             wells = info["wells"]
             base_color = info["color"]
-            # color_list = [base_color] * len(wells) if color_mode == "Solid" else [
-            #     mcolors.LinearSegmentedColormap.from_list("gradient", [
-            #         tuple(1 - 0.5 * (1 - c) for c in mcolors.to_rgb(base_color)), mcolors.to_rgb(base_color)
-            #     ])(i / max(1, len(wells) - 1)) for i in range(len(wells))
-            # ]
+
             if color_mode == "Solid":
                 color_list = [base_color] * len(wells)
             elif color_mode == "Gradient":
@@ -319,291 +335,70 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
             else:
                 color_list = [base_color] * len(wells)
             
-
+            # ======= For each well =======
             for well, color in zip(wells, color_list):
-                if well in df["Well Position"].values:
-                    sub_df = df[df["Well Position"] == well].sort_values(by=cycle_col)
-                    x = sub_df[cycle_col].values
-                    
-                    for i, chan_str in enumerate(selected_channels):
-                        chan_idx = int(chan_str) - 1
-
-                        
-                        if 0 <= chan_idx < len(rfu_cols):
-                            y = sub_df[rfu_cols[chan_idx]].copy()
-                            if normalize_to_rox:
-                                rox_index = 6  # ROX is the 7th channel (index 6)
-                                if rox_index < len(rfu_cols):
-                                    rox_signal = sub_df[rfu_cols[rox_index]]
-                                    if np.all(rox_signal > 0):  # avoid divide-by-zero
-                                        y = y / rox_signal
-                                
-                            if use_baseline:
-                                if baseline_method == "Average of N cycles":
-                                    baseline = y.iloc[:baseline_cycles].mean()
-                                    y -= baseline
-                                elif baseline_method == "Homebrew Lift-off Fit":
-                                    y, _ = spr_qpcr_background_correction(np.array(y))
-                                    
-                                
-                            style = channel_styles[i % len(channel_styles)]
-                            fig.add_trace(go.Scatter(
-                                x=x,
-                                y=y,
-                                mode="lines+markers" if style["symbol"] else "lines",
-                                name=f"{group}: {well} (Ch {chan_str})",
-                                line=dict(color=mcolors.to_hex(color), dash=style["dash"]),
-                                marker=dict(symbol=style["symbol"], size=6) if style["symbol"] else None
-                            ))
-
-                            if threshold_enabled:
-                                try:
-                                    channel_threshold = per_channel_thresholds.get(chan_str, 0.13)
-                                    ct_value,ct_std = calculate_ct(x, y, threshold = channel_threshold,return_std=False)
-                                #     # Remove NaNs
-                                #     valid = ~np.isnan(x) & ~np.isnan(y)
-                                #     x_fit = np.array(x[valid], dtype=float)
-                                #     y_fit = np.array(y[valid], dtype=float)
-
-                                #     post_cycle_10 = x_fit >= 10
-                                #     x_fit = x_fit[post_cycle_10]
-                                #     y_fit = y_fit[post_cycle_10]
-                                    
-                                #     if len(x_fit) >= 5:  # ensure enough points to fit
-                                #         popt, _ = curve_fit(four_param_logistic, x_fit, y_fit, maxfev=10000)
-                                #         channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
-                                #         ct = inverse_four_pl(channel_threshold, *popt)
-                                #         if ct is not None and x_fit[0] <= ct <= x_fit[-1]:
-                                #             ct_results.append({
-                                #                 "Group": group,
-                                #                 "Well": well,
-                                #                 "Channel": chan_str if platform == "QuantStudio (QS)" else channel_name,
-                                #                 "Ct": f"{float(ct):.2f}"
-                                #             })
-                                #             # fig.add_annotation(
-                                #             #     x=ct,
-                                #             #     y=threshold_value,
-                                #             #     text=f"Ct: {ct:.1f}",
-                                #             #     showarrow=True,
-                                #             #     arrowhead=2,
-                                #             #     font=dict(size=10),
-                                #             #     bgcolor="white"
-                                #             # )
-                                except:                          
-                                    channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
-                                    above = y > channel_threshold
-                                    
-                                    if any(above):
-                                        first_cross = above.idxmax()
-                                        if first_cross > 0:
-                                            y1, y2 = y[first_cross - 1], y[first_cross]
-                                            x1, x2 = x[first_cross - 1], x[first_cross]
-                                            ct = x1 + (threshold_value - y1) * (x2 - x1) / (y2 - y1)
-                                        else:
-                                            ct = x[first_cross]
-
-                                        ct_results.append({
-                                            "Group": group,
-                                            "Well": well,
-                                            "Channel": chan_str if platform == "QuantStudio (QS)" else channel_name,
-                                            "Ct": f"{float(ct):.2f}"
-                                        })
-
-
-    
-    else:   # Biorad
-        rox_df = None
-        if normalize_to_rox:
-            rox_file = next((f for f in uploaded_files if "rox" in f.name.lower()), None)
-            if rox_file:
-                rox_df = pd.read_csv(rox_file)
-
-        for i, channel_name in enumerate(selected_channels):
-            chan_str = channel_name 
-            match_key = channel_name_map.get(channel_name, channel_name.lower())
-            matched_file = next((f for f in uploaded_files if match_key.lower() in f.name.lower()), None)
-            if not matched_file:
-                st.warning(f"No file found for channel: {channel_name}")
-                continue
-
-            df = pd.read_csv(matched_file)
-            df.columns = df.columns.str.strip()
-            df = df.loc[:, ~df.columns.str.contains("Unnamed")]
-
-             # ======= DECONVOLUTION: Load correction file ONCE here =======
-            df_corr = None
-            if enable_deconvolution and channel_name == deconv_target_channel:
-                match_key_corr = channel_name_map.get(deconv_correction_channel, deconv_correction_channel.lower())
-                corr_file = next((f for f in uploaded_files if match_key_corr.lower() in f.name.lower()), None)
-                if corr_file:
-                    try:
-                        df_corr = pd.read_csv(corr_file, comment='#')
-                        df_corr.columns = df_corr.columns.str.strip()
-                        df_corr = df_corr.loc[:, ~df_corr.columns.str.contains("Unnamed")]
+                if well in df.columns:
+                    y = df[well].copy()
         
-                        if df_corr.empty:
-                            st.warning(f"Correction file '{corr_file.name}' is empty. Deconvolution skipped for channel {channel_name}.")
-                            df_corr = None
-                        elif (df_corr.drop(columns='Cycle', errors='ignore').sum().sum() == 0):
-                            st.warning(f"Correction file '{corr_file.name}' has all-zero data. Deconvolution skipped for channel {channel_name}.")
-                            df_corr = None
-                    except pd.errors.EmptyDataError:
-                        st.warning(f"Correction file '{corr_file.name}' is empty or invalid. Deconvolution skipped for channel {channel_name}.")
-                        df_corr = None
-                else:
-                    st.warning(f"Correction channel file not found: {deconv_correction_channel}")
-
-            for group, info in st.session_state["groups"].items():
-                wells = info["wells"]
-                base_color = info["color"]
-
-                if color_mode == "Solid":
-                    color_list = [base_color] * len(wells)
-                elif color_mode == "Gradient":
-                    gradient = mcolors.LinearSegmentedColormap.from_list("gradient", [
-                        tuple(1 - 0.5 * (1 - c) for c in mcolors.to_rgb(base_color)), mcolors.to_rgb(base_color)
-                    ])
-                    color_list = [gradient(i / max(1, len(wells) - 1)) for i in range(len(wells))]
-                elif color_mode == "Colormap" and colormap_name:
-                    cmap = plt.get_cmap(colormap_name)
-                    color_list = [mcolors.to_hex(cmap(i / max(1, len(wells) - 1))) for i in range(len(wells))]
-                else:
-                    color_list = [base_color] * len(wells)
+                    # Apply deconvolution IF df_corr loaded and well present
+                    if enable_deconvolution and channel_name == deconv_target_channel and df_corr is not None:
+                        if well in df_corr.columns:
+                            y_corr = df_corr[well]
+                            y = y + alpha_value * y_corr
+                        else:
+                            st.warning(f"Correction file loaded but well {well} not found in correction file.")
+        
+                    # === Rest of your processing ===
+                    if normalize_to_rox and rox_df is not None and well in rox_df.columns and channel_name.upper() != "ROX":
+                        rox_signal = rox_df[well]
+                        if np.all(rox_signal > 0):
+                            y = y / rox_signal
+        
+                    if use_baseline:
+                        if baseline_method == "Average of N cycles":
+                            baseline = y.iloc[:baseline_cycles].mean()
+                            y -= baseline
+                        elif baseline_method == "Homebrew Lift-off Fit":
+                            y, E = spr_qpcr_background_correction(np.array(y))
+        
+                    x = df["Cycle"].values
+                    style = channel_styles[i % len(channel_styles)]
+                    fig.add_trace(go.Scatter(
+                        x=x,
+                        y=y,
+                        mode="lines+markers" if style["symbol"] else "lines",
+                        name=f"{group}: {well} ({channel_name})",
+                        line=dict(color=mcolors.to_hex(color), dash=style["dash"]),
+                        marker=dict(symbol=style["symbol"], size=6) if style["symbol"] else None
+                    ))
                 
-                # ======= For each well =======
-                for well, color in zip(wells, color_list):
-                    if well in df.columns:
-                        y = df[well].copy()
-            
-                        # Apply deconvolution IF df_corr loaded and well present
-                        if enable_deconvolution and channel_name == deconv_target_channel and df_corr is not None:
-                            if well in df_corr.columns:
-                                y_corr = df_corr[well]
-                                y = y + alpha_value * y_corr
-                            else:
-                                st.warning(f"Correction file loaded but well {well} not found in correction file.")
-            
-                        # === Rest of your processing ===
-                        if normalize_to_rox and rox_df is not None and well in rox_df.columns and channel_name.upper() != "ROX":
-                            rox_signal = rox_df[well]
-                            if np.all(rox_signal > 0):
-                                y = y / rox_signal
-            
-                        if use_baseline:
-                            if baseline_method == "Average of N cycles":
-                                baseline = y.iloc[:baseline_cycles].mean()
-                                y -= baseline
-                            elif baseline_method == "Homebrew Lift-off Fit":
-                                y, E = spr_qpcr_background_correction(np.array(y))
-            
-                        x = df["Cycle"].values
-                        style = channel_styles[i % len(channel_styles)]
-                        fig.add_trace(go.Scatter(
-                            x=x,
-                            y=y,
-                            mode="lines+markers" if style["symbol"] else "lines",
-                            name=f"{group}: {well} ({channel_name})",
-                            line=dict(color=mcolors.to_hex(color), dash=style["dash"]),
-                            marker=dict(symbol=style["symbol"], size=6) if style["symbol"] else None
-                        ))
-                    
 
-                        if threshold_enabled:
-                                channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
-                                try:
-                                    ct_value, ct_std = calculate_ct(x, y, threshold=channel_threshold, startpoint = 10, use_4pl=True, return_std=True)
-                                    if ct_value is not None:
-                                        ct_results.append({
-                                            "Group": group,
-                                            "Well": well,
-                                            "Channel": channel_name,
-                                            "Ct": f"{ct_value:.2f}"
-                                        })
-                                    else:
-                                        ct_results.append({
-                                            "Group": group,
-                                            "Well": well,
-                                            "Channel": channel_name,
-                                            "Ct": "Undetermined"
-                                        })
-                                except Exception as e:
+                    if threshold_enabled:
+                            channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
+                            try:
+                                ct_value, ct_std = calculate_ct(x, y, threshold=channel_threshold, startpoint = 10, use_4pl=True, return_std=True)
+                                if ct_value is not None:
+                                    ct_results.append({
+                                        "Group": group,
+                                        "Well": well,
+                                        "Channel": channel_name,
+                                        "Ct": f"{ct_value:.2f}"
+                                    })
+                                else:
                                     ct_results.append({
                                         "Group": group,
                                         "Well": well,
                                         "Channel": channel_name,
                                         "Ct": "Undetermined"
                                     })
-    
-                        # if threshold_enabled:
-                        #     try:
-                        #     #     channel_threshold = per_channel_thresholds.get(chan_str, 0.13)
-                        #     #     ct_value,ct_std = calculate_ct(x, y, threshold = channel_threshold,return_std=False)
-                                
-                        #         # Remove NaNs
-                        #         valid = ~np.isnan(x) & ~np.isnan(y)
-                        #         x_fit = np.array(x[valid], dtype=float)
-                        #         y_fit = np.array(y[valid], dtype=float)
+                            except Exception as e:
+                                ct_results.append({
+                                    "Group": group,
+                                    "Well": well,
+                                    "Channel": channel_name,
+                                    "Ct": "Undetermined"
+                                })
 
-                        #         post_cycle_10 = x_fit >= 10
-                        #         x_fit = x_fit[post_cycle_10]
-                        #         y_fit = y_fit[post_cycle_10]
-                                
-                        #         if len(x_fit) >= 5:  # ensure enough points to fit
-                        #             popt, _ = curve_fit(four_param_logistic, x_fit, y_fit, maxfev=10000)                                 
-                        #             channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
-                        #             ct = inverse_four_pl(channel_threshold, *popt)
-
-                        #         if ct is not None and x_fit[0] <= ct <= x_fit[-1]:
-                        #             ct_results.append({
-                        #                 "Group": group,
-                        #                 "Well": well,
-                        #                 "Channel": channel_name,
-                        #                 "Ct": f"{float(ct):.2f}"
-                        #             })
-                        #                 # fig.add_annotation(
-                        #                 #     x=ct,
-                        #                 #     y=threshold_value,
-                        #                 #     text=f"Ct: {ct:.1f}",
-                        #                 #     showarrow=True,
-                        #                 #     arrowhead=2,
-                        #                 #     font=dict(size=10),
-                        #                 #     bgcolor="white"
-                        #                 # )
-                        #     except:
-                        #         channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
-                        #         above = y > channel_threshold
-                                
-                        #         if any(above):
-                        #             first_cross = np.argmax(above)
-                        #             if first_cross > 0:
-                        #                 y1, y2 = y[first_cross - 1], y[first_cross]
-                        #                 x1, x2 = x[first_cross - 1], x[first_cross]
-                        #                 ct = x1 + (channel_threshold - y1) * (x2 - x1) / (y2 - y1)
-                        #             else:
-                        #                 ct = x[first_cross]
-                            
-                        #             ct_results.append({
-                        #                 "Group": group,
-                        #                 "Well": well,
-                        #                 "Channel": channel_name,
-                        #                 "Ct": f"{float(ct):.2f}"
-                        #             })
-                        #         else:
-                        #             ct_results.append({
-                        #                 "Group": group,
-                        #                 "Well": well,
-                        #                 "Channel": channel_name,
-                        #                 "Ct": "Undetermined"
-                        #             })
-                                # above = y > threshold_value
-                                # if any(above):
-                                #     first_cross = above.idxmax()
-                                #     if first_cross > 0:
-                                #         y1, y2 = y[first_cross - 1], y[first_cross]
-                                #         x1, x2 = x[first_cross - 1], x[first_cross]
-                                #         ct = x1 + (threshold_value - y1) * (x2 - x1) / (y2 - y1)
-                                #     else:
-                                #         ct = x[first_cross]
 
     if threshold_enabled:
         for ch in selected_channels:
