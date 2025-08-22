@@ -142,6 +142,165 @@ if "groups" not in st.session_state:
 
 # ==== choose groups ====
 
+# # ---------- Replicates controls ----------
+# st.subheader("Replicates (optional)")
+# use_replicates = st.toggle(
+#     "Enable Replicate Selection",
+#     value=False,
+#     help="Auto-select paired wells when you click a well."
+# )
+# replicate_mode = st.selectbox(
+#     "Replicate Pattern",
+#     ["Left-Right (paired across halves)", "Top-Down (paired across halves)",
+#      "Neighbors (horizontal pair)", "Neighbors (vertical pair)"],
+#     disabled=not use_replicates,
+#     help="Examples: LR A1↔A7 (96) / A1↔A13 (384); TD A1↔E1 (96) / A1↔I1 (384); Horz A1↔A2; Vert A1↔B1."
+# )
+
+# # ---------- Helpers ----------
+# def _safe_key(s: str) -> str:
+#     k = re.sub(r'[^A-Za-z0-9_]+', '_', s).strip('_')
+#     return k or "Group_1"
+
+# nrows, ncols = len(rows), len(cols)
+# row_to_idx = {r: i for i, r in enumerate(rows)}
+# idx_to_row = {i: r for i, r in enumerate(rows)}
+# col_min, col_max = min(cols), max(cols)
+
+# def _lr_pair(well: str):
+#     """Left-Right pair across plate halves on the same row (e.g., A1↔A7 for 96)."""
+#     r = well[0]
+#     c = int(well[1:])
+#     half = ncols // 2
+#     partner_c = c + half if c <= half else c - half
+#     return [f"{r}{partner_c}"] if 1 <= partner_c <= ncols else []
+
+# def _td_pair(well: str):
+#     """Top-Down pair across plate halves on the same column (e.g., A1↔E1 for 96)."""
+#     r = well[0]
+#     c = int(well[1:])
+#     ri = row_to_idx[r]
+#     half = nrows // 2
+#     partner_ri = ri + half if ri < half else ri - half
+#     return [f"{idx_to_row[partner_ri]}{c}"] if 0 <= partner_ri < nrows else []
+
+# def _neighbors_h_pair(well: str):
+#     """Neighbors horizontal PAIR: (1↔2), (3↔4), ... within the same row."""
+#     r = well[0]
+#     c = int(well[1:])
+#     partner_c = c + 1 if (c % 2 == 1) else c - 1
+#     return [f"{r}{partner_c}"] if 1 <= partner_c <= ncols else []
+
+# def _neighbors_v_pair(well: str):
+#     """Neighbors vertical PAIR: (A↔B), (C↔D), ... within the same column."""
+#     r = well[0]
+#     c = int(well[1:])
+#     ri = row_to_idx[r]
+#     partner_ri = ri + 1 if (ri % 2 == 0) else ri - 1
+#     return [f"{idx_to_row[partner_ri]}{c}"] if 0 <= partner_ri < nrows else []
+
+# def replicate_partners(well: str):
+#     if not use_replicates:
+#         return []
+#     if replicate_mode.startswith("Left-Right"):
+#         return _lr_pair(well)
+#     if replicate_mode.startswith("Top-Down"):
+#         return _td_pair(well)
+#     if "horizontal" in replicate_mode:
+#         return _neighbors_h_pair(well)
+#     return _neighbors_v_pair(well)  # "Neighbors (vertical pair)"
+
+# # ---------- Group assignment ----------
+# st.subheader("Step 1: Assign Wells to a Group")
+# group_name = st.text_input("Group Name", "Group 1")
+# safe_group_key = _safe_key(group_name)
+
+# preset_colors = {
+#     "Red": "#FF0000", "Green": "#28A745", "Blue": "#007BFF", "Orange": "#FD7E14",
+#     "Purple": "#6F42C1", "Brown": "#8B4513", "Black": "#000000", "Gray": "#6C757D", "Custom HEX": None
+# }
+# selected_color_name = st.selectbox("Select Group Color", list(preset_colors.keys()))
+# group_color = st.color_picker("Pick a Custom Color", "#FF0000") if selected_color_name == "Custom HEX" else preset_colors[selected_color_name]
+
+# if "groups" not in st.session_state:
+#     st.session_state["groups"] = {}
+# if "__suppress_rep_cb__" not in st.session_state:
+#     st.session_state["__suppress_rep_cb__"] = False
+
+# # ---------- Quick select ----------
+# st.write("Quick Select:")
+# col1, col2 = st.columns(2)
+# selected_row = col1.selectbox("Select Entire Row", ["None"] + rows)
+# selected_col = col2.selectbox("Select Entire Column", ["None"] + [str(c) for c in cols])
+# select_all = st.checkbox("Select All Wells")
+
+# quick_selected = set()
+# if selected_row != "None":
+#     quick_selected.update([f"{selected_row}{c}" for c in cols])
+# if selected_col != "None":
+#     quick_selected.update([f"{r}{selected_col}" for r in rows])
+
+# # ---------- Replicate callback ----------
+# def _on_checkbox_change(well: str):
+#     """Mirror the clicked well's state to its replicate partner(s) (pair modes)."""
+#     if st.session_state["__suppress_rep_cb__"] or not use_replicates:
+#         return
+#     key = f"{safe_group_key}_{well}"
+#     state = bool(st.session_state.get(key, False))
+#     st.session_state["__suppress_rep_cb__"] = True
+#     try:
+#         for partner in replicate_partners(well):
+#             pkey = f"{safe_group_key}_{partner}"
+#             # Key exists because all checkboxes are rendered; guard anyway:
+#             if pkey in st.session_state:
+#                 st.session_state[pkey] = state
+#     finally:
+#         st.session_state["__suppress_rep_cb__"] = False
+
+# # ---------- Manual well selection grid ----------
+# st.write("Select Wells (click checkboxes):")
+# for r in rows:
+#     cols_container = st.columns(len(cols))
+#     for c, col in zip(cols, cols_container):
+#         well = f"{r}{c}"
+#         key = f"{safe_group_key}_{well}"
+#         default_checked = select_all or (well in quick_selected)
+#         col.checkbox(
+#             well,
+#             key=key,
+#             value=bool(st.session_state.get(key, default_checked)),
+#             on_change=_on_checkbox_change,
+#             args=(well,)
+#         )
+
+# # ---------- Build selection ----------
+# selected_wells = [
+#     f"{r}{c}"
+#     for r in rows for c in cols
+#     if st.session_state.get(f"{safe_group_key}_{r}{c}", False)
+# ]
+# selected_wells = sorted(set(selected_wells), key=lambda x: (x[0], int(x[1:])))
+
+# # ---------- Add / show / delete groups ----------
+# if st.button("Add Group"):
+#     if group_name and selected_wells:
+#         st.session_state["groups"][group_name] = {"color": group_color, "wells": selected_wells}
+#         st.success(f"Added {group_name}: {len(selected_wells)} wells")
+
+# st.subheader("Current Groups")
+# for group, info in st.session_state["groups"].items():
+#     st.markdown(f"**{group}** ({info['color']}): {', '.join(info['wells'])}")
+
+# st.subheader("Delete a Group")
+# if st.session_state["groups"]:
+#     group_to_delete = st.selectbox("Select Group to Delete", list(st.session_state["groups"].keys()))
+#     if st.button("Delete Group"):
+#         st.session_state["groups"].pop(group_to_delete, None)
+#         st.success(f"Deleted group: {group_to_delete}")
+# else:
+#     st.info("No groups available to delete.")
+# ==== choose groups ====
+
 # ---------- Replicates controls ----------
 st.subheader("Replicates (optional)")
 use_replicates = st.toggle(
@@ -151,10 +310,15 @@ use_replicates = st.toggle(
 )
 replicate_mode = st.selectbox(
     "Replicate Pattern",
-    ["Left-Right (paired across halves)", "Top-Down (paired across halves)",
-     "Neighbors (horizontal pair)", "Neighbors (vertical pair)"],
+    [
+        "Left-Right (paired across halves)",
+        "Top-Down (paired across halves)",
+        "Neighbors (horizontal pair)",
+        "Neighbors (vertical pair)",
+        "Custom (paired)"
+    ],
     disabled=not use_replicates,
-    help="Examples: LR A1↔A7 (96) / A1↔A13 (384); TD A1↔E1 (96) / A1↔I1 (384); Horz A1↔A2; Vert A1↔B1."
+    help="LR: A1↔A7 (96) / A1↔A13 (384); TD: A1↔E1 (96) / A1↔I1 (384); Neighbors: A1↔A2 or A1↔B1; Custom: define your own pairs."
 )
 
 # ---------- Helpers ----------
@@ -166,6 +330,13 @@ nrows, ncols = len(rows), len(cols)
 row_to_idx = {r: i for i, r in enumerate(rows)}
 idx_to_row = {i: r for i, r in enumerate(rows)}
 col_min, col_max = min(cols), max(cols)
+well_names = [f"{r}{c}" for r in rows for c in cols]
+
+# Initialize global storage for custom replicate pairs
+if "replicate_pairs" not in st.session_state:
+    st.session_state["replicate_pairs"] = []          # list of (a,b)
+if "replicate_map" not in st.session_state:
+    st.session_state["replicate_map"] = {}            # both directions
 
 def _lr_pair(well: str):
     """Left-Right pair across plate halves on the same row (e.g., A1↔A7 for 96)."""
@@ -199,16 +370,95 @@ def _neighbors_v_pair(well: str):
     partner_ri = ri + 1 if (ri % 2 == 0) else ri - 1
     return [f"{idx_to_row[partner_ri]}{c}"] if 0 <= partner_ri < nrows else []
 
+def _custom_pair_partner(well: str):
+    """Return custom partner if defined."""
+    return [st.session_state["replicate_map"][well]] if well in st.session_state["replicate_map"] else []
+
 def replicate_partners(well: str):
+    """Return partner(s) based on replicate mode."""
     if not use_replicates:
         return []
     if replicate_mode.startswith("Left-Right"):
         return _lr_pair(well)
     if replicate_mode.startswith("Top-Down"):
         return _td_pair(well)
-    if "horizontal" in replicate_mode:
+    if replicate_mode.startswith("Neighbors (horizontal"):
         return _neighbors_h_pair(well)
-    return _neighbors_v_pair(well)  # "Neighbors (vertical pair)"
+    if replicate_mode.startswith("Neighbors (vertical"):
+        return _neighbors_v_pair(well)
+    # Custom (paired)
+    return _custom_pair_partner(well)
+
+# ---------- Custom replicate pair builder ----------
+if use_replicates and replicate_mode == "Custom (paired)":
+    st.markdown("**Define custom replicate pairs**")
+    # Only allow wells that aren't already in a pair to be chosen as 'first'
+    already_paired = set(st.session_state["replicate_map"].keys())
+    available_first = ["— choose —"] + [w for w in well_names if w not in already_paired]
+    first = st.selectbox("1) Select first well", available_first, key="custom_rep_first")
+
+    # Partner list excludes the first choice and wells already paired
+    if first != "— choose —":
+        available_partner = ["— choose —"] + [w for w in well_names if (w != first and w not in already_paired)]
+    else:
+        available_partner = ["— choose —"]
+    second = st.selectbox("2) Select its replicate", available_partner, key="custom_rep_second")
+
+    colA, colB = st.columns([1,1])
+    def _add_pair(a, b):
+        if a == "— choose —" or b == "— choose —":
+            st.warning("Pick both wells before adding.")
+            return
+        if a == b:
+            st.warning("A replicate cannot be paired with itself.")
+            return
+        if a in st.session_state["replicate_map"] or b in st.session_state["replicate_map"]:
+            st.warning("One or both wells are already paired. Remove the old pair first.")
+            return
+        # store tuple (ordered for consistency)
+        tup = (a, b) if a < b else (b, a)
+        st.session_state["replicate_pairs"].append(tup)
+        # and store both directions for quick lookup
+        st.session_state["replicate_map"][a] = b
+        st.session_state["replicate_map"][b] = a
+        st.success(f"Added pair: {tup[0]} ↔ {tup[1]}")
+        # reset selectors for next pair
+        st.session_state["custom_rep_first"] = "— choose —"
+        st.session_state["custom_rep_second"] = "— choose —"
+        st.rerun()
+
+    def _remove_pair(pair_str):
+        if not pair_str or "↔" not in pair_str:
+            return
+        a, b = [x.strip() for x in pair_str.split("↔")]
+        # remove from list
+        ordered = (a, b) if a < b else (b, a)
+        try:
+            st.session_state["replicate_pairs"].remove(ordered)
+        except ValueError:
+            pass
+        # remove from map
+        st.session_state["replicate_map"].pop(a, None)
+        st.session_state["replicate_map"].pop(b, None)
+        st.success(f"Removed pair: {a} ↔ {b}")
+        st.rerun()
+
+    with colA:
+        st.button("Add Pair & Next", on_click=_add_pair, args=(first, second))
+    with colB:
+        if st.session_state["replicate_pairs"]:
+            display_pairs = [f"{a} ↔ {b}" for (a, b) in st.session_state["replicate_pairs"]]
+            to_remove = st.selectbox("Remove a saved pair", ["— none —"] + display_pairs, key="custom_rep_remove")
+            if st.button("Remove Selected Pair"):
+                if to_remove != "— none —":
+                    _remove_pair(to_remove)
+
+    # Show current pairs
+    if st.session_state["replicate_pairs"]:
+        st.caption("Current replicate pairs (used for STD later):")
+        st.write(", ".join([f"{a}↔{b}" for (a, b) in st.session_state["replicate_pairs"]]))
+    else:
+        st.caption("No pairs added yet.")
 
 # ---------- Group assignment ----------
 st.subheader("Step 1: Assign Wells to a Group")
@@ -242,7 +492,7 @@ if selected_col != "None":
 
 # ---------- Replicate callback ----------
 def _on_checkbox_change(well: str):
-    """Mirror the clicked well's state to its replicate partner(s) (pair modes)."""
+    """Mirror the clicked well's state to its replicate partner(s) per current mode."""
     if st.session_state["__suppress_rep_cb__"] or not use_replicates:
         return
     key = f"{safe_group_key}_{well}"
@@ -251,8 +501,7 @@ def _on_checkbox_change(well: str):
     try:
         for partner in replicate_partners(well):
             pkey = f"{safe_group_key}_{partner}"
-            # Key exists because all checkboxes are rendered; guard anyway:
-            if pkey in st.session_state:
+            if pkey in st.session_state:  # guard to avoid Streamlit exceptions
                 st.session_state[pkey] = state
     finally:
         st.session_state["__suppress_rep_cb__"] = False
