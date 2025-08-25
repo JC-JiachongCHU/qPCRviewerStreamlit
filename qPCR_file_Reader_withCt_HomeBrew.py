@@ -510,14 +510,6 @@ for r in rows:
             args=(well,)
         )
         
-# # (Optional) Clear helpers
-# col_clear1, col_clear2 = st.columns(2)
-# with col_clear1:
-#     if st.button("Clear Active Half"):
-#         _apply_bulk_selection(active_wells, False)
-# with col_clear2:
-#     if st.button("Clear All Wells"):
-#         _apply_bulk_selection(set(well_names), False)
 
 # ---------- Build selection ----------
 selected_wells = [
@@ -588,20 +580,11 @@ normalize_to_rox = st.sidebar.checkbox("Normalize fluorescence to ROX channel")
 st.sidebar.subheader("Step 3: Baseline Settings")
 use_baseline = st.sidebar.toggle("Apply Baseline Subtraction", value=False)
 
-# baseline_method = st.sidebar.radio("Baseline Method",["Average of N cycles", "Homebrew Lift-off Fit"],index=0)
-
-# if use_baseline and baseline_method == "Average of N cycles":
-#     # Choose where to start averaging (3–15 is a typical safe range)
-#     baseline_start = st.sidebar.number_input("Baseline start cycle",min_value=3,max_value=15,value=3,step=1)
-
-#     # Choose how many cycles to average
-#     baseline_cycles = st.sidebar.number_input("Number of cycles to average",min_value=1,max_value=20,value=10,step=1)
-
 
 baseline_method = st.sidebar.radio(
     "Baseline Method",
     ["Average of N cycles", "Homebrew Lift-off Fit"],
-    index=0
+    index=1
 )
 
 if use_baseline and baseline_method == "Average of N cycles":
@@ -609,16 +592,16 @@ if use_baseline and baseline_method == "Average of N cycles":
     baseline_cycles = st.sidebar.number_input("Number of cycles to average", min_value=1, max_value=20, value=10, step=1)
 
 elif use_baseline and baseline_method == "Homebrew Lift-off Fit":
-    std_win = st.sidebar.number_input("STD window length (cycles)", min_value=3, max_value=25, value=7, step=1)
-
+    std_win = st.sidebar.number_input("STD window length (cycles)", min_value=3, max_value=25, value=7, step=1,help="Rolling window size for S[i]. Larger smooths noise; smaller is snappier.")
+    
     # UI uses 1-based cycles for convenience; we convert to 0-based index inside the call
-    prefit_start_cycle = st.sidebar.number_input("Prefit start cycle (1-based)", min_value=1, max_value=20, value=3, step=1)
+    prefit_start_cycle = st.sidebar.number_input("Prefit start cycle (1-based)", min_value=1, max_value=20, value=3, step=1,help="Cycle to begin scanning & baseline fitting. Converted to 0-based internally.")
 
-    lift_ratio = st.sidebar.number_input("Sensitivity ratio (S[i]/S_ref)", min_value=0.1, max_value=5.0, value=1.5, step=0.1)
+    lift_ratio = st.sidebar.number_input("Sensitivity ratio (S[i]/S_ref)", min_value=0.1, max_value=5.0, value=1.5, step=0.1, help="Trigger threshold; lower = more sensitive, higher = more conservative.")
 
-    fit_end_pad = st.sidebar.number_input("Baseline fit end offset (i+cycles)", min_value=0, max_value=30, value=6, step=1)
+    fit_end_pad = st.sidebar.number_input("Baseline fit end offset (i+cycles)", min_value=0, max_value=30, value=6, step=1,help="Extend the pre-lift-off linear fit to i+offset.")
 
-    start_point_pad = st.sidebar.number_input("Lift-off mark offset (+cycles)", min_value=0, max_value=30, value=4, step=1)
+    start_point_pad = st.sidebar.number_input("Lift-off mark offset (i+cycles)", min_value=0, max_value=30, value=4, step=1,help="Where to place the visual/returned start marker after detection.")
     
 
 log_y = st.sidebar.toggle("Use Semilog Y-axis (log scale)")
