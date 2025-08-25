@@ -326,17 +326,17 @@ if "__suppress_rep_cb__" not in st.session_state:
     st.session_state["__suppress_rep_cb__"] = False
 
 # # ---------- Quick select ----------
-# st.write("Quick Select:")
-# col1, col2 = st.columns(2)
-# selected_row = col1.selectbox("Select Entire Row", ["None"] + rows)
-# selected_col = col2.selectbox("Select Entire Column", ["None"] + [str(c) for c in cols])
-# select_all = st.checkbox("Select All Wells")
+st.write("Quick Select:")
+col1, col2 = st.columns(2)
+selected_row = col1.selectbox("Select Entire Row", ["None"] + rows)
+selected_col = col2.selectbox("Select Entire Column", ["None"] + [str(c) for c in cols])
+select_all = st.checkbox("Select All Wells")
 
-# quick_selected = set()
-# if selected_row != "None":
-#     quick_selected.update([f"{selected_row}{c}" for c in cols])
-# if selected_col != "None":
-#     quick_selected.update([f"{r}{selected_col}" for r in rows])
+quick_selected = set()
+if selected_row != "None":
+    quick_selected.update([f"{selected_row}{c}" for c in cols])
+if selected_col != "None":
+    quick_selected.update([f"{r}{selected_col}" for r in rows])
 
 # ---------- Replicate callback ----------
 def _on_checkbox_change(well: str):
