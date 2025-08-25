@@ -28,25 +28,86 @@ def inverse_four_pl(threshold, a, b, c, d):
     except:
         return None
 # HomeBrew backgroun subtraction
-def spr_qpcr_background_correction(test_signal):
-    A = np.arange(len(test_signal))
-    E = np.zeros_like(test_signal)
-    S = np.zeros(len(test_signal))
+# def spr_qpcr_background_correction(test_signal):
+#     A = np.arange(len(test_signal))
+#     E = np.zeros_like(test_signal)
+#     S = np.zeros(len(test_signal))
     
-    S[0] = np.std(test_signal[0:4])
-    S[1] = np.std(test_signal[1:7])
+#     S[0] = np.std(test_signal[0:4])
+#     S[1] = np.std(test_signal[1:7])
     
-    for i in range(2, len(test_signal) - 4):
-        S[i] = np.std(test_signal[i:i+7])
-        if S[i] / S[1] > 1.5:
-            p = np.polyfit(A[2:i+6], test_signal[2:i+6], 1)
-            f = np.polyval(p, A)
-            E = test_signal - f
-            start_point = i + 4
+#     for i in range(2, len(test_signal) - 4):
+#         S[i] = np.std(test_signal[i:i+7])
+#         if S[i] / S[1] > 1.5:
+#             p = np.polyfit(A[2:i+6], test_signal[2:i+6], 1)
+#             f = np.polyval(p, A)
+#             E = test_signal - f
+#             start_point = i + 4
+#             return E, start_point
+
+#     # fallback if no lift-off found
+#     return test_signal - np.mean(test_signal[:5]), -1
+
+# ---- HomeBrew Function ----
+# HomeBrew background subtraction (configurable)
+def spr_qpcr_background_correction(
+    test_signal,
+    std_win: int = 7,            # rolling-STD window length (cycles)
+    prefit_start: int = 2,       # 0-based index: start for rolling-STD & linear-fit
+    ratio: float = 1.5,          # trigger when S[i]/S_ref > ratio
+    fit_end_pad: int = 6,        # extend baseline-fit to (i + fit_end_pad)
+    start_point_pad: int = 4     # report start at (i + start_point_pad)
+):
+    """
+    Returns (baseline_corrected_signal, start_point_index).
+
+    Notes:
+      - prefit_start is 0-based (index into the trace).
+      - The baseline line is fit on [prefit_start .. min(i + fit_end_pad, N-1)],
+        then subtracted from the entire trace.
+      - start_point_index is 0-based (or -1 if no lift-off detected).
+    """
+    x = np.asarray(test_signal, dtype=float)
+    n = len(x)
+    if n < 5:
+        return x - np.mean(x[:max(1, n//3)]), -1
+
+    # sanitize inputs
+    std_win         = max(3, int(std_win))
+    prefit_start    = max(0, int(prefit_start))
+    ratio           = float(ratio)
+    fit_end_pad     = max(0, int(fit_end_pad))
+    start_point_pad = max(0, int(start_point_pad))
+
+    # reference noise ~ early baseline (mimics your original S[1] window)
+    ref_start = 1 if 1 + std_win <= n else 0
+    if ref_start + std_win <= n:
+        S_ref = np.std(x[ref_start: ref_start + std_win])
+    else:
+        S_ref = np.std(x[:min(std_win, n)])
+
+    A = np.arange(n)
+
+    # rolling detection
+    last_i = n - std_win
+    for i in range(prefit_start, last_i + 1):
+        S_i = np.std(x[i: i + std_win])
+        if S_ref > 0 and (S_i / S_ref) > ratio:
+            fit_end = min(i + fit_end_pad, n - 1)
+            if fit_end - prefit_start >= 1:
+                p = np.polyfit(A[prefit_start:fit_end + 1], x[prefit_start:fit_end + 1], 1)
+                f = np.polyval(p, A)
+                E = x - f
+            else:
+                # not enough span for linear fit; fall back to mean subtraction
+                base = np.mean(x[prefit_start:i]) if i > prefit_start else np.mean(x[:min(5, n)])
+                E = x - base
+
+            start_point = min(i + start_point_pad, n - 1)
             return E, start_point
 
     # fallback if no lift-off found
-    return test_signal - np.mean(test_signal[:5]), -1
+    return x - np.mean(x[:min(5, n)]), -1
 
 
 def calculate_ct(x, y, threshold, startpoint = 10, use_4pl=True, return_std=False):
@@ -527,20 +588,42 @@ normalize_to_rox = st.sidebar.checkbox("Normalize fluorescence to ROX channel")
 st.sidebar.subheader("Step 3: Baseline Settings")
 use_baseline = st.sidebar.toggle("Apply Baseline Subtraction", value=False)
 
-baseline_method = st.sidebar.radio("Baseline Method",["Average of N cycles", "Homebrew Lift-off Fit"],index=0)
+# baseline_method = st.sidebar.radio("Baseline Method",["Average of N cycles", "Homebrew Lift-off Fit"],index=0)
+
+# if use_baseline and baseline_method == "Average of N cycles":
+#     # Choose where to start averaging (3–15 is a typical safe range)
+#     baseline_start = st.sidebar.number_input("Baseline start cycle",min_value=3,max_value=15,value=3,step=1)
+
+#     # Choose how many cycles to average
+#     baseline_cycles = st.sidebar.number_input("Number of cycles to average",min_value=1,max_value=20,value=10,step=1)
+
+
+baseline_method = st.sidebar.radio(
+    "Baseline Method",
+    ["Average of N cycles", "Homebrew Lift-off Fit"],
+    index=0
+)
 
 if use_baseline and baseline_method == "Average of N cycles":
-    # Choose where to start averaging (3–15 is a typical safe range)
-    baseline_start = st.sidebar.number_input("Baseline start cycle",min_value=3,max_value=15,value=3,step=1)
+    baseline_start = st.sidebar.number_input("Baseline start cycle", min_value=3, max_value=15, value=3, step=1)
+    baseline_cycles = st.sidebar.number_input("Number of cycles to average", min_value=1, max_value=20, value=10, step=1)
 
-    # Choose how many cycles to average
-    baseline_cycles = st.sidebar.number_input("Number of cycles to average",min_value=1,max_value=20,value=10,step=1)
+elif use_baseline and baseline_method == "Homebrew Lift-off Fit":
+    std_win = st.sidebar.number_input("STD window length (cycles)", min_value=3, max_value=25, value=7, step=1)
+
+    # UI uses 1-based cycles for convenience; we convert to 0-based index inside the call
+    prefit_start_cycle = st.sidebar.number_input("Prefit start cycle (1-based)", min_value=1, max_value=20, value=3, step=1)
+
+    lift_ratio = st.sidebar.number_input("Sensitivity ratio (S[i]/S_ref)", min_value=0.1, max_value=5.0, value=1.5, step=0.1)
+
+    fit_end_pad = st.sidebar.number_input("Baseline fit end offset (i+cycles)", min_value=0, max_value=30, value=6, step=1)
+
+    start_point_pad = st.sidebar.number_input("Lift-off mark offset (+cycles)", min_value=0, max_value=30, value=4, step=1)
+    
 
 log_y = st.sidebar.toggle("Use Semilog Y-axis (log scale)")
 
 threshold_enabled = st.sidebar.checkbox("Enable Threshold & Ct Calculation")
-# threshold_value = st.sidebar.number_input("Set RFU Threshold", min_value=0.0, value=1000.0, step=100.0)
-# Per-channel thresholds
 per_channel_thresholds = {}
 if threshold_enabled:
     st.sidebar.markdown("**Per-Channel Thresholds:**")
@@ -652,12 +735,26 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                         if np.all(rox_signal > 0):
                             y = y / rox_signal
         
+                    # if use_baseline:
+                    #     if baseline_method == "Average of N cycles":
+                    #         baseline = y.iloc[baseline_start-1 : baseline_start-1+baseline_cycles].mean()
+                    #         y -= baseline
+                    #     elif baseline_method == "Homebrew Lift-off Fit":
+                    #         y, E = spr_qpcr_background_correction(np.array(y))
+
                     if use_baseline:
                         if baseline_method == "Average of N cycles":
                             baseline = y.iloc[baseline_start-1 : baseline_start-1+baseline_cycles].mean()
                             y -= baseline
                         elif baseline_method == "Homebrew Lift-off Fit":
-                            y, E = spr_qpcr_background_correction(np.array(y))
+                            y, start_point_idx = spr_qpcr_background_correction(
+                                np.array(y),
+                                std_win=int(std_win),
+                                prefit_start=int(prefit_start_cycle) - 1,  # convert 1-based UI -> 0-based index
+                                ratio=float(lift_ratio),
+                                fit_end_pad=int(fit_end_pad),
+                                start_point_pad=int(start_point_pad),
+                            )
         
                     x = df["Cycle"].values
                     style = channel_styles[i % len(channel_styles)]
