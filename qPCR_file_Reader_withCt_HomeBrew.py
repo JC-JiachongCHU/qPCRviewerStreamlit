@@ -774,6 +774,70 @@ with tab_stats:
     else:
         st.caption("No replicate pairs with numeric Ct found.")
 
+
+# --- Replicate STD summary (goes right after st.dataframe(ct_df)) ---
+std_rows = []
+ctd = ct_df.copy()
+ctd["Ct_num"] = pd.to_numeric(ctd["Ct"], errors="coerce")
+ctd = ctd.dropna(subset=["Ct_num"])
+
+wells_present = set(ctd["Well"].unique())
+pairs = set()
+
+# Derive pairs from the current replicate pattern, even if the toggle is off
+def _partners_for(w):
+    if replicate_mode.startswith("Left-Right"):
+        return _lr_pair(w)
+    if replicate_mode.startswith("Top-Down"):
+        return _td_pair(w)
+    if replicate_mode.startswith("Neighbors (horizontal"):
+        return _neighbors_h_pair(w)
+    if replicate_mode.startswith("Neighbors (vertical"):
+        return _neighbors_v_pair(w)
+    return []
+
+if replicate_mode != "Custom (paired)":
+    for w in wells_present:
+        for p in _partners_for(w):
+            if p in wells_present:
+                pairs.add(tuple(sorted((w, p))))
+else:
+    # Use user-defined custom pairs
+    for a, b in st.session_state.get("replicate_pairs", []):
+        if a in wells_present and b in wells_present:
+            pairs.add(tuple(sorted((a, b))))
+
+# Build rows: Group, A1 - A7, Channel, STD Ct
+for a, b in sorted(pairs):
+    for ch in sorted(ctd["Channel"].unique()):
+        a_row = ctd[(ctd["Well"] == a) & (ctd["Channel"] == ch)]
+        b_row = ctd[(ctd["Well"] == b) & (ctd["Channel"] == ch)]
+        if not a_row.empty and not b_row.empty:
+            c1 = float(a_row["Ct_num"].iloc[0])
+            c2 = float(b_row["Ct_num"].iloc[0])
+            grp = a_row["Group"].iloc[0] if a_row["Group"].iloc[0] == b_row["Group"].iloc[0] else "Mixed"
+            std_rows.append({
+                "Group": grp,
+                "Pair": f"{a} - {b}",
+                "Channel": ch,
+                "STD Ct": float(np.std([c1, c2], ddof=1)),  # sample STD
+            })
+
+if std_rows:
+    std_df = pd.DataFrame(std_rows).sort_values(["Channel", "Pair"]).reset_index(drop=True)
+    st.subheader("Replicate STD")
+    st.dataframe(std_df.round({"STD Ct": 2}), use_container_width=True)
+
+
+
+
+
+
+
+
+
+
+
 # # ======= After the per-well loop: compute replicate Ct statistics (automatic) =======
 # if threshold_enabled:
 #     # Build numeric Ct table
