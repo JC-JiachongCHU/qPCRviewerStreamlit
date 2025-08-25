@@ -349,20 +349,39 @@ def _on_checkbox_change(well: str):
         
 # --- Grey-out mask for replicate modes ---
 greyed_wells = set()
+active_wells = set(well_names)  # default: everything clickable
+
 if use_replicates:
+    half_cols = ncols // 2
+    half_rows = nrows // 2
+
     if replicate_mode.startswith("Left-Right"):
-        # Grey out RIGHT half: cols > half
-        half_cols = ncols // 2
+        # Grey out RIGHT half; click on LEFT half
         greyed_wells = {f"{r}{c}" for r in rows for c in cols if c > half_cols}
+        active_wells = {f"{r}{c}" for r in rows for c in cols if c <= half_cols}
         st.caption("Replicates: Left↔Right pairing. Right half is greyed out (read-only).")
+
     elif replicate_mode.startswith("Top-Down"):
-        # Grey out BOTTOM half: row index >= half
-        half_rows = nrows // 2
+        # Grey out BOTTOM half; click on TOP half
         greyed_wells = {f"{rows[i]}{c}" for i in range(half_rows, nrows) for c in cols}
+        active_wells = {f"{rows[i]}{c}" for i in range(0, half_rows) for c in cols}
         st.caption("Replicates: Top↔Down pairing. Bottom half is greyed out (read-only).")
+
+    elif replicate_mode.startswith("Neighbors (horizontal"):
+        # Grey out ODD columns (1,3,5,...); click EVEN columns (2,4,6,...)
+        greyed_wells = {f"{r}{c}" for r in rows for c in cols if (c % 2) == 1}
+        active_wells = {f"{r}{c}" for r in rows for c in cols if (c % 2) == 0}
+        st.caption("Replicates: Horizontal neighbors. Odd columns are greyed (click 2,4,6,...).")
+
+    elif replicate_mode.startswith("Neighbors (vertical"):
+        # Grey out ODD rows (A,C,E,...) -> indices 0,2,4,...; click EVEN rows (B,D,F,...)
+        greyed_wells = {f"{rows[i]}{c}" for i in range(0, nrows, 2) for c in cols}
+        active_wells = {f"{rows[i]}{c}" for i in range(1, nrows, 2) for c in cols}
+        st.caption("Replicates: Vertical neighbors. Odd rows (A,C,E,...) are greyed (click B,D,F,...).")
+
     else:
-        # Neighbors or Custom: no half greyed
         greyed_wells = set()
+        active_wells = set(well_names)
 
 # ---------- Manual well selection grid ----------
 st.write("Select Wells (click checkboxes):")
@@ -375,15 +394,60 @@ for r in rows:
 
         # Disable if it's in the greyed half for the current replicate mode
         disabled_cell = use_replicates and (well in greyed_wells)
-
         col.checkbox(
             well,
             key=key,
             value=bool(st.session_state.get(key, default_checked)),
-            disabled=disabled_cell,                  # <<— this greys it out
+            disabled=disabled_cell,
             on_change=_on_checkbox_change,
             args=(well,)
         )
+# --- Determine which half is "active" when replicates are on ---
+half_cols = ncols // 2
+half_rows = nrows // 2
+if use_replicates and replicate_mode.startswith("Left-Right"):
+    active_wells = {f"{r}{c}" for r in rows for c in cols if c <= half_cols}   # left half
+elif use_replicates and replicate_mode.startswith("Top-Down"):
+    active_wells = {f"{rows[i]}{c}" for i in range(0, half_rows) for c in cols}  # top half
+else:
+    active_wells = set(well_names)  # no restriction
+
+# --- Bulk apply selection to session_state (and mirror to replicates) ---
+def _apply_bulk_selection(target_wells, state=True):
+    st.session_state["__suppress_rep_cb__"] = True
+    try:
+        for w in target_wells:
+            key = f"{safe_group_key}_{w}"
+            st.session_state[key] = state
+            if use_replicates:
+                for p in replicate_partners(w):
+                    pkey = f"{safe_group_key}_{p}"
+                    st.session_state[pkey] = state
+    finally:
+        st.session_state["__suppress_rep_cb__"] = False
+
+# --- Apply "Select All" to the active half (replicate mirroring fills the grey half) ---
+if select_all:
+    _apply_bulk_selection(active_wells, True)
+
+# --- Apply quick row/column selection (restricted to active half) ---
+bulk_targets = set()
+if selected_row != "None":
+    bulk_targets |= {f"{selected_row}{c}" for c in cols}
+if selected_col != "None":
+    bulk_targets |= {f"{r}{selected_col}" for r in rows}
+bulk_targets &= active_wells
+if bulk_targets:
+    _apply_bulk_selection(sorted(bulk_targets), True)
+
+# (Optional) Clear helpers
+col_clear1, col_clear2 = st.columns(2)
+with col_clear1:
+    if st.button("Clear Active Half"):
+        _apply_bulk_selection(active_wells, False)
+with col_clear2:
+    if st.button("Clear All Wells"):
+        _apply_bulk_selection(set(well_names), False)
 
 # ---------- Build selection ----------
 selected_wells = [
