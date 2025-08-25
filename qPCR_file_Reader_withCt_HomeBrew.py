@@ -611,12 +611,6 @@ if uploaded_files and st.session_state.plot_ready:
                                 })
 
 
-    # if threshold_enabled:
-    #     for ch in selected_channels:
-    #         channel_threshold = per_channel_thresholds.get(ch, 1000.0)  # fallback default
-    #         fig.add_hline(y=channel_threshold, line_dash="dot", line_color="gray",
-    #                       annotation_text=f"{ch} Threshold = {channel_threshold} ", annotation_position="top right")
-
     # ======= After the per-well loop: compute replicate Ct statistics (only if pairs exist) =======
     if threshold_enabled:
         # Collect replicate pairs from session (custom UI) or map (if you built one)
@@ -668,233 +662,236 @@ if uploaded_files and st.session_state.plot_ready:
                         use_container_width=True
                     )
 
-# ======= Threshold lines & plot (unchanged) =======
-# if threshold_enabled:
-#     for ch in selected_channels:
-#         channel_threshold = per_channel_thresholds.get(ch, 1000.0)  # fallback default
-#         fig.add_hline(
-#             y=channel_threshold, line_dash="dot", line_color="gray",
-#             annotation_text=f"{ch} Threshold = {channel_threshold} ",
-#             annotation_position="top right"
-#         )
-    
-#     fig.update_layout(
-#         title="Amplification Curves",
-#         xaxis_title="Cycle",
-#         yaxis_title="log₁₀(RFU)" if log_y else "RFU",
-#         yaxis_type="log" if log_y else "linear",
-#         legend=dict(font=dict(size=8),orientation = "v",x= 1.02, y = 1, xanchor ="left",yanchor = "top" ),
-#         width=800,          # width in pixels
-#         height=600          # height in pixels (6:8 ratio)
-#         )
+    # ======= Add threshold lines (only if enabled) =======
+    if threshold_enabled:
+        for ch in selected_channels:
+            channel_threshold = per_channel_thresholds.get(ch, 1000.0)
+            fig.add_hline(
+                y=channel_threshold, line_dash="dot", line_color="gray",
+                annotation_text=f"{ch} Threshold = {channel_threshold} ",
+                annotation_position="top right"
+            )
 
-#     st.plotly_chart(fig, use_container_width=False)
+    # ======= ALWAYS render the plot =======
+    fig.update_layout(
+        title="Amplification Curves",
+        xaxis_title="Cycle",
+        yaxis_title="log₁₀(RFU)" if log_y else "RFU",
+        yaxis_type="log" if log_y else "linear",
+        legend=dict(font=dict(size=8), orientation="v", x=1.02, y=1, xanchor="left", yanchor="top"),
+        width=800, height=600
+    )
 
+    # Tabs for clean layout
+    tab_plot, tab_ct, tab_stats = st.tabs(["Plot", "Ct table", "Replicate STD"])
 
+    with tab_plot:
+        st.plotly_chart(fig, use_container_width=False)
 
-# ======= Add threshold lines (only if enabled) =======
-if threshold_enabled:
-    for ch in selected_channels:
-        channel_threshold = per_channel_thresholds.get(ch, 1000.0)
-        fig.add_hline(y=channel_threshold, line_dash="dot", line_color="gray",
-                      annotation_text=f"{ch} Threshold = {channel_threshold} ",
-                      annotation_position="top right")
+    with tab_ct:
+        if ct_results:
+            st.subheader("Ct Values")
+            ct_df = pd.DataFrame(ct_results)
+            st.dataframe(ct_df)
 
-# ======= ALWAYS render the plot =======
-fig.update_layout(
-    title="Amplification Curves",
-    xaxis_title="Cycle",
-    yaxis_title="log₁₀(RFU)" if log_y else "RFU",
-    yaxis_type="log" if log_y else "linear",
-    legend=dict(font=dict(size=8), orientation="v", x=1.02, y=1, xanchor="left", yanchor="top"),
-    width=800, height=600
-)
-# Tabs for clean layout
-st.write("reached tabs")
-tab_plot, tab_ct, tab_stats = st.tabs(["Plot", "Ct table", "Replicate STD"])
-with tab_plot:
-    st.plotly_chart(fig, use_container_width=False)
+            # ---- Download (kept in Ct tab so it's next to the table) ----
+            include_conditional_formatting = st.checkbox("Include Conditional Formatting in Download", value=True)
+            output = io.BytesIO()
+            writer = pd.ExcelWriter(output, engine='openpyxl')
 
-with tab_ct:
-    if ct_results:
-        st.subheader("Ct Values")
-        st.dataframe(pd.DataFrame(ct_results))
+            plate_rows = ["A","B","C","D","E","F","G","H"] if plate_type == "96-well" else [chr(i) for i in range(ord("A"), ord("P")+1)]
+            plate_cols = list(range(1,13)) if plate_type == "96-well" else list(range(1,25))
 
-with tab_stats:
-    stats = st.session_state.get("replicate_ct_stats") or []
-    if stats:
-        rep_df = pd.DataFrame(stats).sort_values(["Channel","Pair"]).reset_index(drop=True)
-        st.subheader("Replicate Ct statistics")
-        st.dataframe(rep_df.round({"Ct1":2,"Ct2":2,"MeanCt":2,"StdCt":2,"AbsΔCt":2}), use_container_width=True)
-    else:
-        st.caption("No replicate pairs with numeric Ct found.")    
-
-# === Export Ct values ===
-    if ct_results:
-        st.subheader("Ct Values")
-        ct_df = pd.DataFrame(ct_results)
-        st.dataframe(ct_df)
-    
-        include_conditional_formatting = st.checkbox("Include Conditional Formatting in Download", value=True)
-    
-        output = io.BytesIO()
-        writer = pd.ExcelWriter(output, engine='openpyxl')
-    
-        plate_rows = ["A", "B", "C", "D", "E", "F", "G", "H"] if plate_type == "96-well" else [chr(i) for i in range(ord("A"), ord("P")+1)]
-        plate_cols = list(range(1, 13)) if plate_type == "96-well" else list(range(1, 25))
-    
-        for channel in ct_df["Channel"].unique():
-            plate_matrix = pd.DataFrame(index=plate_rows, columns=plate_cols)
-    
-            channel_df = ct_df[ct_df["Channel"] == channel]
-            for _, row in channel_df.iterrows():
-                well = row["Well"]
-                match = re.match(r"([A-Z]+)([0-9]+)", well)
-                if match:
-                    r, c = match.group(1), int(match.group(2))
-                    if r in plate_matrix.index and c in plate_matrix.columns:
+            for channel in ct_df["Channel"].unique():
+                plate_matrix = pd.DataFrame(index=plate_rows, columns=plate_cols)
+                channel_df = ct_df[ct_df["Channel"] == channel]
+                for _, row in channel_df.iterrows():
+                    well = row["Well"]
+                    m = re.match(r"([A-Z]+)([0-9]+)", well)
+                    if m:
+                        r, c = m.group(1), int(m.group(2))
                         ct_raw = str(row["Ct"]).strip()
                         try:
                             ct_value = float(ct_raw)
                         except (ValueError, TypeError):
-                            ct_value = np.nan  # Assign NaN if Ct is not numeric
-                        plate_matrix.at[r, c] = ct_value
-                        
-                if r in plate_matrix.index and c in plate_matrix.columns:
-                    plate_matrix.at[r, c] = ct_value
-    
-            plate_matrix.sort_index(axis=1, inplace=True)
-            plate_matrix.to_excel(writer, sheet_name=str(channel))
-    
-        writer.close()
-        output.seek(0)
-    
-        if include_conditional_formatting:
-            wb = load_workbook(output)
-            for sheetname in wb.sheetnames:
-                ws = wb[sheetname]
-                start_row = 2
-                end_row = 9 if plate_type == "96-well" else 17
-                end_col = 13 if plate_type == "96-well" else 25
-                cell_range = f"B{start_row}:{get_column_letter(end_col)}{end_row}"
-    
-                rule = ColorScaleRule(
-                    start_type='num', start_value=14, start_color='4F81BD',
-                    mid_type='percentile', mid_value=50, mid_color='FFFFFF',
-                    end_type='num', end_value=33, end_color='F8696B'
-                )
-                ws.conditional_formatting.add(cell_range, rule)
+                            ct_value = np.nan
+                        if r in plate_matrix.index and c in plate_matrix.columns:
+                            plate_matrix.at[r, c] = ct_value
+                plate_matrix.sort_index(axis=1, inplace=True)
+                plate_matrix.to_excel(writer, sheet_name=str(channel))
 
-                thin_border = Border(
-                    left=Side(style='thin', color='000000'),
-                    right=Side(style='thin', color='000000'),
-                    top=Side(style='thin', color='000000'),
-                    bottom=Side(style='thin', color='000000')
-                )
-    
-                for row in ws.iter_rows(min_row=start_row, max_row=end_row, min_col=2, max_col=end_col):
-                    for cell in row:
-                        cell.border = thin_border
-                
-            final_output = io.BytesIO()
-            wb.save(final_output)
-            final_output.seek(0)
+            writer.close()
+            output.seek(0)
+
+            if include_conditional_formatting:
+                wb = load_workbook(output)
+                for sheetname in wb.sheetnames:
+                    ws = wb[sheetname]
+                    start_row = 2
+                    end_row = 9 if plate_type == "96-well" else 17
+                    end_col = 13 if plate_type == "96-well" else 25
+                    cell_range = f"B{start_row}:{get_column_letter(end_col)}{end_row}"
+
+                    rule = ColorScaleRule(
+                        start_type='num', start_value=14, start_color='4F81BD',
+                        mid_type='percentile', mid_value=50, mid_color='FFFFFF',
+                        end_type='num', end_value=33, end_color='F8696B'
+                    )
+                    ws.conditional_formatting.add(cell_range, rule)
+
+                    thin_border = Border(
+                        left=Side(style='thin', color='000000'),
+                        right=Side(style='thin', color='000000'),
+                        top=Side(style='thin', color='000000'),
+                        bottom=Side(style='thin', color='000000')
+                    )
+                    for row in ws.iter_rows(min_row=start_row, max_row=end_row, min_col=2, max_col=end_col):
+                        for cell in row:
+                            cell.border = thin_border
+
+                final_output = io.BytesIO()
+                wb.save(final_output)
+                final_output.seek(0)
+            else:
+                final_output = output
+
+            st.download_button(
+                label="Download Ct Results as XLSX (Plate Layout)",
+                data=final_output,
+                file_name=f"Ct_Results_{version}_plate_layout.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+    with tab_stats:
+        stats = st.session_state.get("replicate_ct_stats") or []
+        if stats:
+            rep_df = pd.DataFrame(stats).sort_values(["Channel","Pair"]).reset_index(drop=True)
+            st.subheader("Replicate Ct statistics")
+            st.dataframe(
+                rep_df.round({"Ct1":2, "Ct2":2, "MeanCt":2, "StdCt":2, "AbsΔCt":2}),
+                use_container_width=True
+            )
         else:
-            final_output = output
-    
-        st.download_button(
-            label="Download Ct Results as XLSX (Plate Layout)",
-            data=final_output,
-            file_name=f"Ct_Results_{version}_plate_layout.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+            st.caption("No replicate pairs with numeric Ct found.")
 
 
-# ------------------------
-# Debug Section - Heatmap
-# ------------------------
-# st.sidebar.subheader("[Debug] Heatmap")
-# enable_debug_heatmap = st.sidebar.checkbox("Enable Heatmap Debug Mode")
-# if enable_debug_heatmap:
-#     st.subheader("Debug Heatmap of Average Fluorescence")
 
-#     debug_channel = st.sidebar.selectbox("Select Channel for Heatmap", channel_options)
-#     debug_cycle_count = st.sidebar.number_input("Number of Cycles to Average", min_value=1, max_value=100, value=20)
+# # ======= Add threshold lines (only if enabled) =======
+# if threshold_enabled:
+#     for ch in selected_channels:
+#         channel_threshold = per_channel_thresholds.get(ch, 1000.0)
+#         fig.add_hline(y=channel_threshold, line_dash="dot", line_color="gray",
+#                       annotation_text=f"{ch} Threshold = {channel_threshold} ",
+#                       annotation_position="top right")
 
-#     heatmap_matrix = None  # initialize to check later
+# # ======= ALWAYS render the plot =======
+# fig.update_layout(
+#     title="Amplification Curves",
+#     xaxis_title="Cycle",
+#     yaxis_title="log₁₀(RFU)" if log_y else "RFU",
+#     yaxis_type="log" if log_y else "linear",
+#     legend=dict(font=dict(size=8), orientation="v", x=1.02, y=1, xanchor="left", yanchor="top"),
+#     width=800, height=600
+# )
+# # Tabs for clean layout
+# st.write("reached tabs")
+# tab_plot, tab_ct, tab_stats = st.tabs(["Plot", "Ct table", "Replicate STD"])
+# with tab_plot:
+#     st.plotly_chart(fig, use_container_width=False)
 
-#     if platform == "QuantStudio (QS)" and uploaded_files:
-#         df = pd.read_excel(uploaded_files[0][1]) if uploaded_files[0][1].name.endswith("xlsx") else pd.read_csv(uploaded_files[0][1])
-#         df = df[df["Well Position"] != "Well Position"]
-#         df.iloc[:, 5:] = df.iloc[:, 5:].apply(pd.to_numeric, errors='coerce')
-#         rfu_cols = [col for col in df.columns if col.startswith("X")]
-#         debug_chan_idx = int(debug_channel) - 1
+# with tab_ct:
+#     if ct_results:
+#         st.subheader("Ct Values")
+#         st.dataframe(pd.DataFrame(ct_results))
 
-#         detected_wells = df["Well Position"].dropna().unique()
-#         rows_used = sorted(set(w[0] for w in detected_wells if isinstance(w, str)))
-#         cols_used = sorted(set(int(w[1:]) for w in detected_wells if isinstance(w, str) and w[1:].isdigit()))
-#         heatmap_matrix = pd.DataFrame(np.nan, index=rows_used, columns=cols_used)
-
-#         for well in detected_wells:
-#             sub_df = df[df["Well Position"] == well].sort_values(by=df.columns[1])
-#             if debug_chan_idx < len(rfu_cols):
-#                 y = sub_df[rfu_cols[debug_chan_idx]].iloc[:debug_cycle_count]
-#                 avg_val = y.mean()
-#                 match = re.match(r"([A-Z]+)([0-9]+)", well)
-#                 if match:
-#                     r, c = match.group(1), int(match.group(2))
-#                     if r in plate_matrix.index and c in plate_matrix.columns:
-#                         plate_matrix.at[r, c] = float(row["Ct"])
-#                 if r in heatmap_matrix.index and c in heatmap_matrix.columns:
-#                     heatmap_matrix.loc[r, c] = avg_val
-
-#     elif platform == "Bio-Rad" and uploaded_files:
-#         match_key = channel_name_map.get(debug_channel, debug_channel.lower())
-#         matched_file = next((f for f in uploaded_files if match_key.lower() in f.name.lower()), None)
-#         if matched_file:
-#             df = pd.read_csv(matched_file)
-#             df.columns = df.columns.str.strip()
-#             df = df.loc[:, ~df.columns.str.contains("Unnamed")]
-#             detected_wells = [c for c in df.columns if isinstance(c, str) and len(c) >= 2 and c[0].isalpha() and c[1:].isdigit()]
-#             rows_used = sorted(set(w[0] for w in detected_wells))
-#             cols_used = sorted(set(int(w[1:]) for w in detected_wells))
-#             heatmap_matrix = pd.DataFrame(np.nan, index=rows_used, columns=cols_used)
-
-#             for well in detected_wells:
-#                 y = df[well].iloc[:debug_cycle_count]
-#                 avg_val = y.mean()
-#                 match = re.match(r"([A-Z]+)([0-9]+)", well)
-#                 if match:
-#                     r, c = match.group(1), int(match.group(2))
-#                     if r in plate_matrix.index and c in plate_matrix.columns:
-#                         plate_matrix.at[r, c] = float(row["Ct"])
-
-
-#     if heatmap_matrix is not None:
-#         # Plot heatmap
-#         rows_used = list(heatmap_matrix.index)
-#         cols_used = list(heatmap_matrix.columns)
-#         n_rows, n_cols = len(rows_used), len(cols_used)
-#         cell_size = 0.6
-#         fig, ax = plt.subplots(figsize=(n_cols * cell_size, n_rows * cell_size))
-#         im = ax.imshow(heatmap_matrix.values.astype(float), cmap='viridis', aspect='equal')
-
-#         ax.set_xticks(np.arange(len(cols_used)))
-#         ax.set_yticks(np.arange(len(rows_used)))
-#         ax.set_xticklabels(cols_used)
-#         ax.set_yticklabels(rows_used)
-#         plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
-
-#         for i in range(n_rows):
-#             for j in range(n_cols):
-#                 value = heatmap_matrix.iloc[i, j]
-#                 if not np.isnan(value):
-#                     ax.text(j, i, f"{value:.1f}", ha="center", va="center",
-#                             color="white" if value > np.nanmax(heatmap_matrix.values)/2 else "black",
-#                             fontsize=5)
-
-#         ax.set_title(f"Average RFU (First {debug_cycle_count} Cycles) - {debug_channel}")
-#         fig.colorbar(im, ax=ax)
-#         st.pyplot(fig)
+# with tab_stats:
+#     stats = st.session_state.get("replicate_ct_stats") or []
+#     if stats:
+#         rep_df = pd.DataFrame(stats).sort_values(["Channel","Pair"]).reset_index(drop=True)
+#         st.subheader("Replicate Ct statistics")
+#         st.dataframe(rep_df.round({"Ct1":2,"Ct2":2,"MeanCt":2,"StdCt":2,"AbsΔCt":2}), use_container_width=True)
 #     else:
-#         st.warning("No heatmap data available. Please check file format or platform selection.")
+#         st.caption("No replicate pairs with numeric Ct found.")    
+
+# # === Export Ct values ===
+#     if ct_results:
+#         st.subheader("Ct Values")
+#         ct_df = pd.DataFrame(ct_results)
+#         st.dataframe(ct_df)
+    
+#         include_conditional_formatting = st.checkbox("Include Conditional Formatting in Download", value=True)
+    
+#         output = io.BytesIO()
+#         writer = pd.ExcelWriter(output, engine='openpyxl')
+    
+#         plate_rows = ["A", "B", "C", "D", "E", "F", "G", "H"] if plate_type == "96-well" else [chr(i) for i in range(ord("A"), ord("P")+1)]
+#         plate_cols = list(range(1, 13)) if plate_type == "96-well" else list(range(1, 25))
+    
+#         for channel in ct_df["Channel"].unique():
+#             plate_matrix = pd.DataFrame(index=plate_rows, columns=plate_cols)
+    
+#             channel_df = ct_df[ct_df["Channel"] == channel]
+#             for _, row in channel_df.iterrows():
+#                 well = row["Well"]
+#                 match = re.match(r"([A-Z]+)([0-9]+)", well)
+#                 if match:
+#                     r, c = match.group(1), int(match.group(2))
+#                     if r in plate_matrix.index and c in plate_matrix.columns:
+#                         ct_raw = str(row["Ct"]).strip()
+#                         try:
+#                             ct_value = float(ct_raw)
+#                         except (ValueError, TypeError):
+#                             ct_value = np.nan  # Assign NaN if Ct is not numeric
+#                         plate_matrix.at[r, c] = ct_value
+                        
+#                 if r in plate_matrix.index and c in plate_matrix.columns:
+#                     plate_matrix.at[r, c] = ct_value
+    
+#             plate_matrix.sort_index(axis=1, inplace=True)
+#             plate_matrix.to_excel(writer, sheet_name=str(channel))
+    
+#         writer.close()
+#         output.seek(0)
+    
+#         if include_conditional_formatting:
+#             wb = load_workbook(output)
+#             for sheetname in wb.sheetnames:
+#                 ws = wb[sheetname]
+#                 start_row = 2
+#                 end_row = 9 if plate_type == "96-well" else 17
+#                 end_col = 13 if plate_type == "96-well" else 25
+#                 cell_range = f"B{start_row}:{get_column_letter(end_col)}{end_row}"
+    
+#                 rule = ColorScaleRule(
+#                     start_type='num', start_value=14, start_color='4F81BD',
+#                     mid_type='percentile', mid_value=50, mid_color='FFFFFF',
+#                     end_type='num', end_value=33, end_color='F8696B'
+#                 )
+#                 ws.conditional_formatting.add(cell_range, rule)
+
+#                 thin_border = Border(
+#                     left=Side(style='thin', color='000000'),
+#                     right=Side(style='thin', color='000000'),
+#                     top=Side(style='thin', color='000000'),
+#                     bottom=Side(style='thin', color='000000')
+#                 )
+    
+#                 for row in ws.iter_rows(min_row=start_row, max_row=end_row, min_col=2, max_col=end_col):
+#                     for cell in row:
+#                         cell.border = thin_border
+                
+#             final_output = io.BytesIO()
+#             wb.save(final_output)
+#             final_output.seek(0)
+#         else:
+#             final_output = output
+    
+#         st.download_button(
+#             label="Download Ct Results as XLSX (Plate Layout)",
+#             data=final_output,
+#             file_name=f"Ct_Results_{version}_plate_layout.xlsx",
+#             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+#         )
+
+
+
