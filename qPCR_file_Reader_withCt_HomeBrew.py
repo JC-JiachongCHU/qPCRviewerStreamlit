@@ -306,6 +306,13 @@ st.subheader("Step 1: Assign Wells to a Group")
 group_name = st.text_input("Group Name", "Group 1")
 safe_group_key = _safe_key(group_name)
 
+# --- Initialize per-well checkbox state once per group key ---
+for w in well_names:
+    k = f"{safe_group_key}_{w}"
+    if k not in st.session_state:
+        st.session_state[k] = False
+
+
 preset_colors = {
     "Red": "#FF0000", "Green": "#28A745", "Blue": "#007BFF", "Orange": "#FD7E14",
     "Purple": "#6F42C1", "Brown": "#8B4513", "Black": "#000000", "Gray": "#6C757D", "Custom HEX": None
@@ -318,18 +325,18 @@ if "groups" not in st.session_state:
 if "__suppress_rep_cb__" not in st.session_state:
     st.session_state["__suppress_rep_cb__"] = False
 
-# ---------- Quick select ----------
-st.write("Quick Select:")
-col1, col2 = st.columns(2)
-selected_row = col1.selectbox("Select Entire Row", ["None"] + rows)
-selected_col = col2.selectbox("Select Entire Column", ["None"] + [str(c) for c in cols])
-select_all = st.checkbox("Select All Wells")
+# # ---------- Quick select ----------
+# st.write("Quick Select:")
+# col1, col2 = st.columns(2)
+# selected_row = col1.selectbox("Select Entire Row", ["None"] + rows)
+# selected_col = col2.selectbox("Select Entire Column", ["None"] + [str(c) for c in cols])
+# select_all = st.checkbox("Select All Wells")
 
-quick_selected = set()
-if selected_row != "None":
-    quick_selected.update([f"{selected_row}{c}" for c in cols])
-if selected_col != "None":
-    quick_selected.update([f"{r}{selected_col}" for r in rows])
+# quick_selected = set()
+# if selected_row != "None":
+#     quick_selected.update([f"{selected_row}{c}" for c in cols])
+# if selected_col != "None":
+#     quick_selected.update([f"{r}{selected_col}" for r in rows])
 
 # ---------- Replicate callback ----------
 def _on_checkbox_change(well: str):
@@ -349,35 +356,29 @@ def _on_checkbox_change(well: str):
         
 # --- Grey-out mask for replicate modes ---
 greyed_wells = set()
-active_wells = set(well_names)  # default: everything clickable
+active_wells = set(well_names)
 
 if use_replicates:
     half_cols = ncols // 2
     half_rows = nrows // 2
 
     if replicate_mode.startswith("Left-Right"):
-        # Grey out RIGHT half; click on LEFT half
         greyed_wells = {f"{r}{c}" for r in rows for c in cols if c > half_cols}
         active_wells = {f"{r}{c}" for r in rows for c in cols if c <= half_cols}
-        st.caption("Replicates: Left↔Right pairing. Right half is greyed out (read-only).")
 
     elif replicate_mode.startswith("Top-Down"):
-        # Grey out BOTTOM half; click on TOP half
         greyed_wells = {f"{rows[i]}{c}" for i in range(half_rows, nrows) for c in cols}
         active_wells = {f"{rows[i]}{c}" for i in range(0, half_rows) for c in cols}
-        st.caption("Replicates: Top↔Down pairing. Bottom half is greyed out (read-only).")
 
     elif replicate_mode.startswith("Neighbors (horizontal"):
-        # Grey out ODD columns (2,4,5,...); click EVEN columns (1,3,5,...)
+        # grey EVEN columns (2,4,6,...) ; click ODD (1,3,5,...)
         greyed_wells = {f"{r}{c}" for r in rows for c in cols if (c % 2) == 0}
         active_wells = {f"{r}{c}" for r in rows for c in cols if (c % 2) == 1}
-        st.caption("Replicates: Horizontal neighbors. Odd columns are greyed (click 2,4,6,...).")
 
     elif replicate_mode.startswith("Neighbors (vertical"):
-        # Grey out ODD rows (B,d,F,...) -> indices 1,3,5,...; click EVEN rows (A,C,E,...)
+        # grey EVEN rows (B,D,F,...) ; click ODD rows (A,C,E,...)
         greyed_wells = {f"{rows[i]}{c}" for i in range(1, nrows, 2) for c in cols}
         active_wells = {f"{rows[i]}{c}" for i in range(0, nrows, 2) for c in cols}
-        st.caption("Replicates: Vertical neighbors. Odd rows (A,C,E,...) are greyed (click B,D,F,...).")
 
     else:
         greyed_wells = set()
