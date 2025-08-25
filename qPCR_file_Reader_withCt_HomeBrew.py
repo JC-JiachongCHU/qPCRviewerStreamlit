@@ -662,27 +662,64 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                     )
 
 # ======= Threshold lines & plot (unchanged) =======
+# if threshold_enabled:
+#     for ch in selected_channels:
+#         channel_threshold = per_channel_thresholds.get(ch, 1000.0)  # fallback default
+#         fig.add_hline(
+#             y=channel_threshold, line_dash="dot", line_color="gray",
+#             annotation_text=f"{ch} Threshold = {channel_threshold} ",
+#             annotation_position="top right"
+#         )
+    
+#     fig.update_layout(
+#         title="Amplification Curves",
+#         xaxis_title="Cycle",
+#         yaxis_title="log₁₀(RFU)" if log_y else "RFU",
+#         yaxis_type="log" if log_y else "linear",
+#         legend=dict(font=dict(size=8),orientation = "v",x= 1.02, y = 1, xanchor ="left",yanchor = "top" ),
+#         width=800,          # width in pixels
+#         height=600          # height in pixels (6:8 ratio)
+#         )
+
+#     st.plotly_chart(fig, use_container_width=False)
+
+
+
+# ======= Add threshold lines (only if enabled) =======
 if threshold_enabled:
     for ch in selected_channels:
-        channel_threshold = per_channel_thresholds.get(ch, 1000.0)  # fallback default
-        fig.add_hline(
-            y=channel_threshold, line_dash="dot", line_color="gray",
-            annotation_text=f"{ch} Threshold = {channel_threshold} ",
-            annotation_position="top right"
-        )
-    
-    fig.update_layout(
-        title="Amplification Curves",
-        xaxis_title="Cycle",
-        yaxis_title="log₁₀(RFU)" if log_y else "RFU",
-        yaxis_type="log" if log_y else "linear",
-        legend=dict(font=dict(size=8),orientation = "v",x= 1.02, y = 1, xanchor ="left",yanchor = "top" ),
-        width=800,          # width in pixels
-        height=600          # height in pixels (6:8 ratio)
-        )
+        channel_threshold = per_channel_thresholds.get(ch, 1000.0)
+        fig.add_hline(y=channel_threshold, line_dash="dot", line_color="gray",
+                      annotation_text=f"{ch} Threshold = {channel_threshold} ",
+                      annotation_position="top right")
 
+# ======= ALWAYS render the plot =======
+fig.update_layout(
+    title="Amplification Curves",
+    xaxis_title="Cycle",
+    yaxis_title="log₁₀(RFU)" if log_y else "RFU",
+    yaxis_type="log" if log_y else "linear",
+    legend=dict(font=dict(size=8), orientation="v", x=1.02, y=1, xanchor="left", yanchor="top"),
+    width=800, height=600
+)
+# Tabs for clean layout
+tab_plot, tab_ct, tab_stats = st.tabs(["Plot", "Ct table", "Replicate STD"])
+with tab_plot:
     st.plotly_chart(fig, use_container_width=False)
-    
+
+with tab_ct:
+    if ct_results:
+        st.subheader("Ct Values")
+        st.dataframe(pd.DataFrame(ct_results))
+
+with tab_stats:
+    stats = st.session_state.get("replicate_ct_stats") or []
+    if stats:
+        rep_df = pd.DataFrame(stats).sort_values(["Channel","Pair"]).reset_index(drop=True)
+        st.subheader("Replicate Ct statistics")
+        st.dataframe(rep_df.round({"Ct1":2,"Ct2":2,"MeanCt":2,"StdCt":2,"AbsΔCt":2}), use_container_width=True)
+    else:
+        st.caption("No replicate pairs with numeric Ct found.")    
 
 # === Export Ct values ===
     if ct_results:
