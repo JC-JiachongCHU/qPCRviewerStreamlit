@@ -710,6 +710,7 @@ fig.update_layout(
     width=800, height=600
 )
 # Tabs for clean layout
+st.write("reached tabs")
 tab_plot, tab_ct, tab_stats = st.tabs(["Plot", "Ct table", "Replicate STD"])
 with tab_plot:
     st.plotly_chart(fig, use_container_width=False)
