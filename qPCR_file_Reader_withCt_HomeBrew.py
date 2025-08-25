@@ -110,7 +110,7 @@ def calculate_ct(x, y, threshold, startpoint = 10, use_4pl=True, return_std=Fals
 
 
 # timestamp = datetime.datetime.now().strftime("%Y/%m/%d %H:%M")
-version = "v1.2.0"
+version = "v1.2.1"
 
 st.set_page_config(layout="wide")
 st.title("qPCR Viewer - Supports Bio-Rad")
@@ -609,6 +609,7 @@ if uploaded_files and st.session_state.plot_ready:
                                     "Channel": channel_name,
                                     "Ct": "Undetermined"
                                 })
+                                
                     # === Auto compute & show replicate Ct STD (no tabs) ===
                     if threshold_enabled and use_replicates:
                         ct_df = pd.DataFrame(ct_results) if len(ct_results) else pd.DataFrame(columns=["Group","Well","Channel","Ct"])
