@@ -142,165 +142,6 @@ if "groups" not in st.session_state:
 
 # ==== choose groups ====
 
-# # ---------- Replicates controls ----------
-# st.subheader("Replicates (optional)")
-# use_replicates = st.toggle(
-#     "Enable Replicate Selection",
-#     value=False,
-#     help="Auto-select paired wells when you click a well."
-# )
-# replicate_mode = st.selectbox(
-#     "Replicate Pattern",
-#     ["Left-Right (paired across halves)", "Top-Down (paired across halves)",
-#      "Neighbors (horizontal pair)", "Neighbors (vertical pair)"],
-#     disabled=not use_replicates,
-#     help="Examples: LR A1↔A7 (96) / A1↔A13 (384); TD A1↔E1 (96) / A1↔I1 (384); Horz A1↔A2; Vert A1↔B1."
-# )
-
-# # ---------- Helpers ----------
-# def _safe_key(s: str) -> str:
-#     k = re.sub(r'[^A-Za-z0-9_]+', '_', s).strip('_')
-#     return k or "Group_1"
-
-# nrows, ncols = len(rows), len(cols)
-# row_to_idx = {r: i for i, r in enumerate(rows)}
-# idx_to_row = {i: r for i, r in enumerate(rows)}
-# col_min, col_max = min(cols), max(cols)
-
-# def _lr_pair(well: str):
-#     """Left-Right pair across plate halves on the same row (e.g., A1↔A7 for 96)."""
-#     r = well[0]
-#     c = int(well[1:])
-#     half = ncols // 2
-#     partner_c = c + half if c <= half else c - half
-#     return [f"{r}{partner_c}"] if 1 <= partner_c <= ncols else []
-
-# def _td_pair(well: str):
-#     """Top-Down pair across plate halves on the same column (e.g., A1↔E1 for 96)."""
-#     r = well[0]
-#     c = int(well[1:])
-#     ri = row_to_idx[r]
-#     half = nrows // 2
-#     partner_ri = ri + half if ri < half else ri - half
-#     return [f"{idx_to_row[partner_ri]}{c}"] if 0 <= partner_ri < nrows else []
-
-# def _neighbors_h_pair(well: str):
-#     """Neighbors horizontal PAIR: (1↔2), (3↔4), ... within the same row."""
-#     r = well[0]
-#     c = int(well[1:])
-#     partner_c = c + 1 if (c % 2 == 1) else c - 1
-#     return [f"{r}{partner_c}"] if 1 <= partner_c <= ncols else []
-
-# def _neighbors_v_pair(well: str):
-#     """Neighbors vertical PAIR: (A↔B), (C↔D), ... within the same column."""
-#     r = well[0]
-#     c = int(well[1:])
-#     ri = row_to_idx[r]
-#     partner_ri = ri + 1 if (ri % 2 == 0) else ri - 1
-#     return [f"{idx_to_row[partner_ri]}{c}"] if 0 <= partner_ri < nrows else []
-
-# def replicate_partners(well: str):
-#     if not use_replicates:
-#         return []
-#     if replicate_mode.startswith("Left-Right"):
-#         return _lr_pair(well)
-#     if replicate_mode.startswith("Top-Down"):
-#         return _td_pair(well)
-#     if "horizontal" in replicate_mode:
-#         return _neighbors_h_pair(well)
-#     return _neighbors_v_pair(well)  # "Neighbors (vertical pair)"
-
-# # ---------- Group assignment ----------
-# st.subheader("Step 1: Assign Wells to a Group")
-# group_name = st.text_input("Group Name", "Group 1")
-# safe_group_key = _safe_key(group_name)
-
-# preset_colors = {
-#     "Red": "#FF0000", "Green": "#28A745", "Blue": "#007BFF", "Orange": "#FD7E14",
-#     "Purple": "#6F42C1", "Brown": "#8B4513", "Black": "#000000", "Gray": "#6C757D", "Custom HEX": None
-# }
-# selected_color_name = st.selectbox("Select Group Color", list(preset_colors.keys()))
-# group_color = st.color_picker("Pick a Custom Color", "#FF0000") if selected_color_name == "Custom HEX" else preset_colors[selected_color_name]
-
-# if "groups" not in st.session_state:
-#     st.session_state["groups"] = {}
-# if "__suppress_rep_cb__" not in st.session_state:
-#     st.session_state["__suppress_rep_cb__"] = False
-
-# # ---------- Quick select ----------
-# st.write("Quick Select:")
-# col1, col2 = st.columns(2)
-# selected_row = col1.selectbox("Select Entire Row", ["None"] + rows)
-# selected_col = col2.selectbox("Select Entire Column", ["None"] + [str(c) for c in cols])
-# select_all = st.checkbox("Select All Wells")
-
-# quick_selected = set()
-# if selected_row != "None":
-#     quick_selected.update([f"{selected_row}{c}" for c in cols])
-# if selected_col != "None":
-#     quick_selected.update([f"{r}{selected_col}" for r in rows])
-
-# # ---------- Replicate callback ----------
-# def _on_checkbox_change(well: str):
-#     """Mirror the clicked well's state to its replicate partner(s) (pair modes)."""
-#     if st.session_state["__suppress_rep_cb__"] or not use_replicates:
-#         return
-#     key = f"{safe_group_key}_{well}"
-#     state = bool(st.session_state.get(key, False))
-#     st.session_state["__suppress_rep_cb__"] = True
-#     try:
-#         for partner in replicate_partners(well):
-#             pkey = f"{safe_group_key}_{partner}"
-#             # Key exists because all checkboxes are rendered; guard anyway:
-#             if pkey in st.session_state:
-#                 st.session_state[pkey] = state
-#     finally:
-#         st.session_state["__suppress_rep_cb__"] = False
-
-# # ---------- Manual well selection grid ----------
-# st.write("Select Wells (click checkboxes):")
-# for r in rows:
-#     cols_container = st.columns(len(cols))
-#     for c, col in zip(cols, cols_container):
-#         well = f"{r}{c}"
-#         key = f"{safe_group_key}_{well}"
-#         default_checked = select_all or (well in quick_selected)
-#         col.checkbox(
-#             well,
-#             key=key,
-#             value=bool(st.session_state.get(key, default_checked)),
-#             on_change=_on_checkbox_change,
-#             args=(well,)
-#         )
-
-# # ---------- Build selection ----------
-# selected_wells = [
-#     f"{r}{c}"
-#     for r in rows for c in cols
-#     if st.session_state.get(f"{safe_group_key}_{r}{c}", False)
-# ]
-# selected_wells = sorted(set(selected_wells), key=lambda x: (x[0], int(x[1:])))
-
-# # ---------- Add / show / delete groups ----------
-# if st.button("Add Group"):
-#     if group_name and selected_wells:
-#         st.session_state["groups"][group_name] = {"color": group_color, "wells": selected_wells}
-#         st.success(f"Added {group_name}: {len(selected_wells)} wells")
-
-# st.subheader("Current Groups")
-# for group, info in st.session_state["groups"].items():
-#     st.markdown(f"**{group}** ({info['color']}): {', '.join(info['wells'])}")
-
-# st.subheader("Delete a Group")
-# if st.session_state["groups"]:
-#     group_to_delete = st.selectbox("Select Group to Delete", list(st.session_state["groups"].keys()))
-#     if st.button("Delete Group"):
-#         st.session_state["groups"].pop(group_to_delete, None)
-#         st.success(f"Deleted group: {group_to_delete}")
-# else:
-#     st.info("No groups available to delete.")
-# ==== choose groups ====
-
 # ---------- Replicates controls ----------
 st.subheader("Replicates (optional)")
 use_replicates = st.toggle(
@@ -505,6 +346,23 @@ def _on_checkbox_change(well: str):
                 st.session_state[pkey] = state
     finally:
         st.session_state["__suppress_rep_cb__"] = False
+        
+# --- Grey-out mask for replicate modes ---
+greyed_wells = set()
+if use_replicates:
+    if replicate_mode.startswith("Left-Right"):
+        # Grey out RIGHT half: cols > half
+        half_cols = ncols // 2
+        greyed_wells = {f"{r}{c}" for r in rows for c in cols if c > half_cols}
+        st.caption("Replicates: Left↔Right pairing. Right half is greyed out (read-only).")
+    elif replicate_mode.startswith("Top-Down"):
+        # Grey out BOTTOM half: row index >= half
+        half_rows = nrows // 2
+        greyed_wells = {f"{rows[i]}{c}" for i in range(half_rows, nrows) for c in cols}
+        st.caption("Replicates: Top↔Down pairing. Bottom half is greyed out (read-only).")
+    else:
+        # Neighbors or Custom: no half greyed
+        greyed_wells = set()
 
 # ---------- Manual well selection grid ----------
 st.write("Select Wells (click checkboxes):")
@@ -514,10 +372,15 @@ for r in rows:
         well = f"{r}{c}"
         key = f"{safe_group_key}_{well}"
         default_checked = select_all or (well in quick_selected)
+
+        # Disable if it's in the greyed half for the current replicate mode
+        disabled_cell = use_replicates and (well in greyed_wells)
+
         col.checkbox(
             well,
             key=key,
             value=bool(st.session_state.get(key, default_checked)),
+            disabled=disabled_cell,                  # <<— this greys it out
             on_change=_on_checkbox_change,
             args=(well,)
         )
