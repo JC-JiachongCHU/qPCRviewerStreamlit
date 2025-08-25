@@ -110,7 +110,7 @@ def calculate_ct(x, y, threshold, startpoint = 10, use_4pl=True, return_std=Fals
 
 
 # timestamp = datetime.datetime.now().strftime("%Y/%m/%d %H:%M")
-version = "v1.2.1"
+version = "v1.2.0"
 
 st.set_page_config(layout="wide")
 st.title("qPCR Viewer - Supports Bio-Rad")
@@ -140,6 +140,165 @@ uploaded_files = st.file_uploader("Upload Bio-Rad CSVs (1 per channel)", type=["
 if "groups" not in st.session_state:
     st.session_state["groups"] = {}
 
+# ==== choose groups ====
+
+# # ---------- Replicates controls ----------
+# st.subheader("Replicates (optional)")
+# use_replicates = st.toggle(
+#     "Enable Replicate Selection",
+#     value=False,
+#     help="Auto-select paired wells when you click a well."
+# )
+# replicate_mode = st.selectbox(
+#     "Replicate Pattern",
+#     ["Left-Right (paired across halves)", "Top-Down (paired across halves)",
+#      "Neighbors (horizontal pair)", "Neighbors (vertical pair)"],
+#     disabled=not use_replicates,
+#     help="Examples: LR A1↔A7 (96) / A1↔A13 (384); TD A1↔E1 (96) / A1↔I1 (384); Horz A1↔A2; Vert A1↔B1."
+# )
+
+# # ---------- Helpers ----------
+# def _safe_key(s: str) -> str:
+#     k = re.sub(r'[^A-Za-z0-9_]+', '_', s).strip('_')
+#     return k or "Group_1"
+
+# nrows, ncols = len(rows), len(cols)
+# row_to_idx = {r: i for i, r in enumerate(rows)}
+# idx_to_row = {i: r for i, r in enumerate(rows)}
+# col_min, col_max = min(cols), max(cols)
+
+# def _lr_pair(well: str):
+#     """Left-Right pair across plate halves on the same row (e.g., A1↔A7 for 96)."""
+#     r = well[0]
+#     c = int(well[1:])
+#     half = ncols // 2
+#     partner_c = c + half if c <= half else c - half
+#     return [f"{r}{partner_c}"] if 1 <= partner_c <= ncols else []
+
+# def _td_pair(well: str):
+#     """Top-Down pair across plate halves on the same column (e.g., A1↔E1 for 96)."""
+#     r = well[0]
+#     c = int(well[1:])
+#     ri = row_to_idx[r]
+#     half = nrows // 2
+#     partner_ri = ri + half if ri < half else ri - half
+#     return [f"{idx_to_row[partner_ri]}{c}"] if 0 <= partner_ri < nrows else []
+
+# def _neighbors_h_pair(well: str):
+#     """Neighbors horizontal PAIR: (1↔2), (3↔4), ... within the same row."""
+#     r = well[0]
+#     c = int(well[1:])
+#     partner_c = c + 1 if (c % 2 == 1) else c - 1
+#     return [f"{r}{partner_c}"] if 1 <= partner_c <= ncols else []
+
+# def _neighbors_v_pair(well: str):
+#     """Neighbors vertical PAIR: (A↔B), (C↔D), ... within the same column."""
+#     r = well[0]
+#     c = int(well[1:])
+#     ri = row_to_idx[r]
+#     partner_ri = ri + 1 if (ri % 2 == 0) else ri - 1
+#     return [f"{idx_to_row[partner_ri]}{c}"] if 0 <= partner_ri < nrows else []
+
+# def replicate_partners(well: str):
+#     if not use_replicates:
+#         return []
+#     if replicate_mode.startswith("Left-Right"):
+#         return _lr_pair(well)
+#     if replicate_mode.startswith("Top-Down"):
+#         return _td_pair(well)
+#     if "horizontal" in replicate_mode:
+#         return _neighbors_h_pair(well)
+#     return _neighbors_v_pair(well)  # "Neighbors (vertical pair)"
+
+# # ---------- Group assignment ----------
+# st.subheader("Step 1: Assign Wells to a Group")
+# group_name = st.text_input("Group Name", "Group 1")
+# safe_group_key = _safe_key(group_name)
+
+# preset_colors = {
+#     "Red": "#FF0000", "Green": "#28A745", "Blue": "#007BFF", "Orange": "#FD7E14",
+#     "Purple": "#6F42C1", "Brown": "#8B4513", "Black": "#000000", "Gray": "#6C757D", "Custom HEX": None
+# }
+# selected_color_name = st.selectbox("Select Group Color", list(preset_colors.keys()))
+# group_color = st.color_picker("Pick a Custom Color", "#FF0000") if selected_color_name == "Custom HEX" else preset_colors[selected_color_name]
+
+# if "groups" not in st.session_state:
+#     st.session_state["groups"] = {}
+# if "__suppress_rep_cb__" not in st.session_state:
+#     st.session_state["__suppress_rep_cb__"] = False
+
+# # ---------- Quick select ----------
+# st.write("Quick Select:")
+# col1, col2 = st.columns(2)
+# selected_row = col1.selectbox("Select Entire Row", ["None"] + rows)
+# selected_col = col2.selectbox("Select Entire Column", ["None"] + [str(c) for c in cols])
+# select_all = st.checkbox("Select All Wells")
+
+# quick_selected = set()
+# if selected_row != "None":
+#     quick_selected.update([f"{selected_row}{c}" for c in cols])
+# if selected_col != "None":
+#     quick_selected.update([f"{r}{selected_col}" for r in rows])
+
+# # ---------- Replicate callback ----------
+# def _on_checkbox_change(well: str):
+#     """Mirror the clicked well's state to its replicate partner(s) (pair modes)."""
+#     if st.session_state["__suppress_rep_cb__"] or not use_replicates:
+#         return
+#     key = f"{safe_group_key}_{well}"
+#     state = bool(st.session_state.get(key, False))
+#     st.session_state["__suppress_rep_cb__"] = True
+#     try:
+#         for partner in replicate_partners(well):
+#             pkey = f"{safe_group_key}_{partner}"
+#             # Key exists because all checkboxes are rendered; guard anyway:
+#             if pkey in st.session_state:
+#                 st.session_state[pkey] = state
+#     finally:
+#         st.session_state["__suppress_rep_cb__"] = False
+
+# # ---------- Manual well selection grid ----------
+# st.write("Select Wells (click checkboxes):")
+# for r in rows:
+#     cols_container = st.columns(len(cols))
+#     for c, col in zip(cols, cols_container):
+#         well = f"{r}{c}"
+#         key = f"{safe_group_key}_{well}"
+#         default_checked = select_all or (well in quick_selected)
+#         col.checkbox(
+#             well,
+#             key=key,
+#             value=bool(st.session_state.get(key, default_checked)),
+#             on_change=_on_checkbox_change,
+#             args=(well,)
+#         )
+
+# # ---------- Build selection ----------
+# selected_wells = [
+#     f"{r}{c}"
+#     for r in rows for c in cols
+#     if st.session_state.get(f"{safe_group_key}_{r}{c}", False)
+# ]
+# selected_wells = sorted(set(selected_wells), key=lambda x: (x[0], int(x[1:])))
+
+# # ---------- Add / show / delete groups ----------
+# if st.button("Add Group"):
+#     if group_name and selected_wells:
+#         st.session_state["groups"][group_name] = {"color": group_color, "wells": selected_wells}
+#         st.success(f"Added {group_name}: {len(selected_wells)} wells")
+
+# st.subheader("Current Groups")
+# for group, info in st.session_state["groups"].items():
+#     st.markdown(f"**{group}** ({info['color']}): {', '.join(info['wells'])}")
+
+# st.subheader("Delete a Group")
+# if st.session_state["groups"]:
+#     group_to_delete = st.selectbox("Select Group to Delete", list(st.session_state["groups"].keys()))
+#     if st.button("Delete Group"):
+#         st.session_state["groups"].pop(group_to_delete, None)
+#         st.success(f"Deleted group: {group_to_delete}")
+# else:
+#     st.info("No groups available to delete.")
 # ==== choose groups ====
 
 # ---------- Replicates controls ----------
@@ -411,7 +570,7 @@ if color_mode == "Colormap":
     
 
 channel_options = ["FAM", "HEX", "Cy5", "Cy5.5", "ROX", "SYBR"]
-default_channels = ["FAM"]
+default_channels = ["FAM", "HEX"]
 
 st.sidebar.subheader("Deconvolution Settings (Bio-Rad only)")
 enable_deconvolution = st.sidebar.checkbox("Enable Deconvolution for Bio-Rad")
@@ -477,14 +636,7 @@ channel_styles = [
 ct_results = []
 
 # Plotting
-
-if "plot_ready" not in st.session_state:
-    st.session_state.plot_ready = False
-def _set_plot_ready():
-    st.session_state.plot_ready = True
-st.sidebar.button("Plot Curves", on_click=_set_plot_ready)
-
-if uploaded_files and st.session_state.plot_ready:
+if uploaded_files and st.sidebar.button("Plot Curves"):
     fig = go.Figure()
 
     rox_df = None
@@ -583,7 +735,6 @@ if uploaded_files and st.session_state.plot_ready:
                     ))
                 
 
-                    
                     if threshold_enabled:
                             channel_threshold = per_channel_thresholds.get(chan_str, 1000.0)
                             try:
@@ -609,220 +760,197 @@ if uploaded_files and st.session_state.plot_ready:
                                     "Channel": channel_name,
                                     "Ct": "Undetermined"
                                 })
-                                
-                    # === Auto compute & show replicate Ct STD (no tabs) ===
-                    if threshold_enabled and use_replicates:
-                        ct_df = pd.DataFrame(ct_results) if len(ct_results) else pd.DataFrame(columns=["Group","Well","Channel","Ct"])
-                        if not ct_df.empty:
-                            # keep only numeric Cts
-                            ct_df["Ct_num"] = pd.to_numeric(ct_df["Ct"], errors="coerce")
-                            ct_df = ct_df.dropna(subset=["Ct_num"])
-                            wells_present = set(ct_df["Well"].unique())
-                    
-                            # Build replicate pairs that actually exist in the Ct table
-                            pairs = set()
-                            def _partners_for(w):
-                                if replicate_mode.startswith("Left-Right"):
-                                    return _lr_pair(w)
-                                if replicate_mode.startswith("Top-Down"):
-                                    return _td_pair(w)
-                                if replicate_mode.startswith("Neighbors (horizontal"):
-                                    return _neighbors_h_pair(w)
-                                if replicate_mode.startswith("Neighbors (vertical"):
-                                    return _neighbors_v_pair(w)
-                                return []
-                    
-                            if replicate_mode == "Custom (paired)":
-                                for a, b in st.session_state.get("replicate_pairs", []):
-                                    if a in wells_present and b in wells_present:
-                                        pairs.add(tuple(sorted((a, b))))
-                            else:
-                                for w in wells_present:
-                                    for p in _partners_for(w):
-                                        if p in wells_present:
-                                            pairs.add(tuple(sorted((w, p))))
-                    
-                            # Compute STD per pair × channel
-                            rep_rows = []
-                            for a, b in sorted(pairs):
-                                for ch in sorted(ct_df["Channel"].unique()):
-                                    a_row = ct_df[(ct_df["Well"] == a) & (ct_df["Channel"] == ch)]
-                                    b_row = ct_df[(ct_df["Well"] == b) & (ct_df["Channel"] == ch)]
-                                    if not a_row.empty and not b_row.empty:
-                                        c1 = float(a_row["Ct_num"].iloc[0])
-                                        c2 = float(b_row["Ct_num"].iloc[0])
-                                        grp = a_row["Group"].iloc[0] if a_row["Group"].iloc[0] == b_row["Group"].iloc[0] else "Mixed"
-                                        rep_rows.append({
-                                            "Pair": f"{a}↔{b}",
-                                            "Channel": ch,
-                                            "Group": grp,
-                                            "Ct1": c1,
-                                            "Ct2": c2,
-                                            "MeanCt": float((c1 + c2) / 2.0),
-                                            "StdCt": float(np.std([c1, c2], ddof=1)),  # sample STD
-                                            "AbsΔCt": float(abs(c1 - c2)),
-                                        })
-                    
-                            st.subheader("Replicate Ct STD")
-                            if rep_rows:
-                                rep_df = (pd.DataFrame(rep_rows)
-                                            .sort_values(["Channel", "Pair"])
-                                            .reset_index(drop=True)
-                                            .round({"Ct1": 2, "Ct2": 2, "MeanCt": 2, "StdCt": 2, "AbsΔCt": 2}))
-                                st.dataframe(rep_df, use_container_width=True)
-                            else:
-                                st.caption("No replicate pairs with valid Ct values were found.")
-                    
-                    elif threshold_enabled and not use_replicates:
-                        st.caption("Enable replicates to see the STD table.")
 
 
-#     # ======= After the per-well loop: compute replicate Ct statistics (only if pairs exist) =======
-#     if threshold_enabled:
-#         # Collect replicate pairs from session (custom UI) or map (if you built one)
-#         replicate_pairs = list(st.session_state.get("replicate_pairs") or [])
-#         if not replicate_pairs and "replicate_map" in st.session_state:
-#             # Derive unique pairs from replicate_map if needed
-#             seen = set()
-#             for a, b in (st.session_state.get("replicate_map") or {}).items():
-#                 pair = tuple(sorted((a, b)))
-#                 if pair[0] != pair[1] and pair not in seen:
-#                     seen.add(pair)
-#                     replicate_pairs.append(pair)
+    if threshold_enabled:
+        for ch in selected_channels:
+            channel_threshold = per_channel_thresholds.get(ch, 1000.0)  # fallback default
+            fig.add_hline(y=channel_threshold, line_dash="dot", line_color="gray",
+                          annotation_text=f"{ch} Threshold", annotation_position="top right")
     
-#         if replicate_pairs:
-#             # Build numeric Ct table from your existing ct_results
-#             ct_df = pd.DataFrame(ct_results) if len(ct_results) else pd.DataFrame(columns=["Group","Well","Channel","Ct"])
-#             if not ct_df.empty:
-#                 ct_df["Ct_num"] = pd.to_numeric(ct_df["Ct"], errors="coerce")
-#                 ct_df = ct_df.dropna(subset=["Ct_num"])
-    
-#                 rep_rows = []
-#                 for a, b in replicate_pairs:
-#                     for ch in sorted(ct_df["Channel"].unique()):
-#                         a_row = ct_df[(ct_df["Well"] == a) & (ct_df["Channel"] == ch)]
-#                         b_row = ct_df[(ct_df["Well"] == b) & (ct_df["Channel"] == ch)]
-#                         if not a_row.empty and not b_row.empty:
-#                             cts = [float(a_row["Ct_num"].iloc[0]), float(b_row["Ct_num"].iloc[0])]
-#                             rep_rows.append({
-#                                 "Pair": f"{a}↔{b}",
-#                                 "Channel": ch,
-#                                 "Group1": a_row["Group"].iloc[0],
-#                                 "Group2": b_row["Group"].iloc[0],
-#                                 "Ct1": cts[0],
-#                                 "Ct2": cts[1],
-#                                 "MeanCt": float(np.mean(cts)),
-#                                 "StdCt": float(np.std(cts, ddof=1)),   # sample STD
-#                                 "AbsΔCt": float(abs(cts[0] - cts[1])),
-#                             })
-    
-#                 st.session_state["replicate_ct_stats"] = rep_rows
-    
-#                 # Optional: show table
-#                 if rep_rows:
-#                     st.subheader("Replicate Ct statistics")
-#                     rep_df = pd.DataFrame(rep_rows)
-#                     st.dataframe(
-#                         rep_df.sort_values(["Channel","Pair"]).reset_index(drop=True)
-#                               .round({"Ct1": 2, "Ct2": 2, "MeanCt": 2, "StdCt": 2, "AbsΔCt": 2}),
-#                         use_container_width=True
-#                     )
-    
-# ======= Add threshold lines (only if enabled) =======
-if threshold_enabled:
-    for ch in selected_channels:
-        channel_threshold = per_channel_thresholds.get(ch, 1000.0)
-        fig.add_hline(
-            y=channel_threshold, line_dash="dot", line_color="gray",
-            annotation_text=f"{ch} Threshold = {channel_threshold} ",
-            annotation_position="top right"
+    fig.update_layout(
+        title="Amplification Curves",
+        xaxis_title="Cycle",
+        yaxis_title="log₁₀(RFU)" if log_y else "RFU",
+        yaxis_type="log" if log_y else "linear",
+        legend=dict(font=dict(size=8),orientation = "v",x= 1.02, y = 1, xanchor ="left",yanchor = "top" ),
+        width=800,          # width in pixels
+        height=600          # height in pixels (6:8 ratio)
         )
 
-# ======= ALWAYS render the plot =======
-fig.update_layout(
-    title="Amplification Curves",
-    xaxis_title="Cycle",
-    yaxis_title="log₁₀(RFU)" if log_y else "RFU",
-    yaxis_type="log" if log_y else "linear",
-    legend=dict(font=dict(size=8), orientation="v", x=1.02, y=1, xanchor="left", yanchor="top"),
-    width=800, height=600
-)
+    st.plotly_chart(fig, use_container_width=False)
+    
+
+    
+    if ct_results:
+        st.subheader("Ct Values")
+        ct_df = pd.DataFrame(ct_results)
+        st.dataframe(ct_df)
+    
+        include_conditional_formatting = st.checkbox("Include Conditional Formatting in Download", value=True)
+    
+        output = io.BytesIO()
+        writer = pd.ExcelWriter(output, engine='openpyxl')
+    
+        plate_rows = ["A", "B", "C", "D", "E", "F", "G", "H"] if plate_type == "96-well" else [chr(i) for i in range(ord("A"), ord("P")+1)]
+        plate_cols = list(range(1, 13)) if plate_type == "96-well" else list(range(1, 25))
+    
+        for channel in ct_df["Channel"].unique():
+            plate_matrix = pd.DataFrame(index=plate_rows, columns=plate_cols)
+    
+            channel_df = ct_df[ct_df["Channel"] == channel]
+            for _, row in channel_df.iterrows():
+                well = row["Well"]
+                match = re.match(r"([A-Z]+)([0-9]+)", well)
+                # if match:
+                #     r, c = match.group(1), int(match.group(2))
+                #     if r in plate_matrix.index and c in plate_matrix.columns:
+                #         plate_matrix.at[r, c] = float(row["Ct"])
+                if match:
+                    r, c = match.group(1), int(match.group(2))
+                    if r in plate_matrix.index and c in plate_matrix.columns:
+                        ct_raw = str(row["Ct"]).strip()
+                        try:
+                            ct_value = float(ct_raw)
+                        except (ValueError, TypeError):
+                            ct_value = np.nan  # Assign NaN if Ct is not numeric
+                        plate_matrix.at[r, c] = ct_value
+                        
+                if r in plate_matrix.index and c in plate_matrix.columns:
+                    plate_matrix.at[r, c] = ct_value
+    
+            plate_matrix.sort_index(axis=1, inplace=True)
+            plate_matrix.to_excel(writer, sheet_name=str(channel))
+    
+        writer.close()
+        output.seek(0)
+    
+        if include_conditional_formatting:
+            wb = load_workbook(output)
+            for sheetname in wb.sheetnames:
+                ws = wb[sheetname]
+                start_row = 2
+                end_row = 9 if plate_type == "96-well" else 17
+                end_col = 13 if plate_type == "96-well" else 25
+                cell_range = f"B{start_row}:{get_column_letter(end_col)}{end_row}"
+    
+                rule = ColorScaleRule(
+                    start_type='num', start_value=14, start_color='4F81BD',
+                    mid_type='percentile', mid_value=50, mid_color='FFFFFF',
+                    end_type='num', end_value=33, end_color='F8696B'
+                )
+                ws.conditional_formatting.add(cell_range, rule)
+
+                thin_border = Border(
+                    left=Side(style='thin', color='000000'),
+                    right=Side(style='thin', color='000000'),
+                    top=Side(style='thin', color='000000'),
+                    bottom=Side(style='thin', color='000000')
+                )
+    
+                for row in ws.iter_rows(min_row=start_row, max_row=end_row, min_col=2, max_col=end_col):
+                    for cell in row:
+                        cell.border = thin_border
+                
+            final_output = io.BytesIO()
+            wb.save(final_output)
+            final_output.seek(0)
+        else:
+            final_output = output
+    
+        st.download_button(
+            label="Download Ct Results as XLSX (Plate Layout)",
+            data=final_output,
+            file_name=f"Ct_Results_{version}_plate_layout.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
 
-# Show Ct table (optional)
-if ct_results:
-    ct_df = pd.DataFrame(ct_results)
-    st.subheader("Ct Values")
-    st.dataframe(ct_df)
+# ------------------------
+# Debug Section - Heatmap
+# ------------------------
+# st.sidebar.subheader("[Debug] Heatmap")
+# enable_debug_heatmap = st.sidebar.checkbox("Enable Heatmap Debug Mode")
+# if enable_debug_heatmap:
+#     st.subheader("Debug Heatmap of Average Fluorescence")
+
+#     debug_channel = st.sidebar.selectbox("Select Channel for Heatmap", channel_options)
+#     debug_cycle_count = st.sidebar.number_input("Number of Cycles to Average", min_value=1, max_value=100, value=20)
+
+#     heatmap_matrix = None  # initialize to check later
+
+#     if platform == "QuantStudio (QS)" and uploaded_files:
+#         df = pd.read_excel(uploaded_files[0][1]) if uploaded_files[0][1].name.endswith("xlsx") else pd.read_csv(uploaded_files[0][1])
+#         df = df[df["Well Position"] != "Well Position"]
+#         df.iloc[:, 5:] = df.iloc[:, 5:].apply(pd.to_numeric, errors='coerce')
+#         rfu_cols = [col for col in df.columns if col.startswith("X")]
+#         debug_chan_idx = int(debug_channel) - 1
+
+#         detected_wells = df["Well Position"].dropna().unique()
+#         rows_used = sorted(set(w[0] for w in detected_wells if isinstance(w, str)))
+#         cols_used = sorted(set(int(w[1:]) for w in detected_wells if isinstance(w, str) and w[1:].isdigit()))
+#         heatmap_matrix = pd.DataFrame(np.nan, index=rows_used, columns=cols_used)
+
+#         for well in detected_wells:
+#             sub_df = df[df["Well Position"] == well].sort_values(by=df.columns[1])
+#             if debug_chan_idx < len(rfu_cols):
+#                 y = sub_df[rfu_cols[debug_chan_idx]].iloc[:debug_cycle_count]
+#                 avg_val = y.mean()
+#                 match = re.match(r"([A-Z]+)([0-9]+)", well)
+#                 if match:
+#                     r, c = match.group(1), int(match.group(2))
+#                     if r in plate_matrix.index and c in plate_matrix.columns:
+#                         plate_matrix.at[r, c] = float(row["Ct"])
+#                 if r in heatmap_matrix.index and c in heatmap_matrix.columns:
+#                     heatmap_matrix.loc[r, c] = avg_val
+
+#     elif platform == "Bio-Rad" and uploaded_files:
+#         match_key = channel_name_map.get(debug_channel, debug_channel.lower())
+#         matched_file = next((f for f in uploaded_files if match_key.lower() in f.name.lower()), None)
+#         if matched_file:
+#             df = pd.read_csv(matched_file)
+#             df.columns = df.columns.str.strip()
+#             df = df.loc[:, ~df.columns.str.contains("Unnamed")]
+#             detected_wells = [c for c in df.columns if isinstance(c, str) and len(c) >= 2 and c[0].isalpha() and c[1:].isdigit()]
+#             rows_used = sorted(set(w[0] for w in detected_wells))
+#             cols_used = sorted(set(int(w[1:]) for w in detected_wells))
+#             heatmap_matrix = pd.DataFrame(np.nan, index=rows_used, columns=cols_used)
+
+#             for well in detected_wells:
+#                 y = df[well].iloc[:debug_cycle_count]
+#                 avg_val = y.mean()
+#                 match = re.match(r"([A-Z]+)([0-9]+)", well)
+#                 if match:
+#                     r, c = match.group(1), int(match.group(2))
+#                     if r in plate_matrix.index and c in plate_matrix.columns:
+#                         plate_matrix.at[r, c] = float(row["Ct"])
 
 
-# === Auto compute & show replicate Ct STD (no tabs) ===
-if threshold_enabled and use_replicates and ct_results:
-    ctd = pd.DataFrame(ct_results).copy()
-    ctd["Ct_num"] = pd.to_numeric(ctd["Ct"], errors="coerce")
-    ctd = ctd.dropna(subset=["Ct_num"])
-    wells_present = set(ctd["Well"].unique())
+#     if heatmap_matrix is not None:
+#         # Plot heatmap
+#         rows_used = list(heatmap_matrix.index)
+#         cols_used = list(heatmap_matrix.columns)
+#         n_rows, n_cols = len(rows_used), len(cols_used)
+#         cell_size = 0.6
+#         fig, ax = plt.subplots(figsize=(n_cols * cell_size, n_rows * cell_size))
+#         im = ax.imshow(heatmap_matrix.values.astype(float), cmap='viridis', aspect='equal')
 
-    # Build replicate pairs that exist
-    pairs = set()
-    def _partners_for(w):
-        if replicate_mode.startswith("Left-Right"): return _lr_pair(w)
-        if replicate_mode.startswith("Top-Down"):   return _td_pair(w)
-        if replicate_mode.startswith("Neighbors (horizontal"): return _neighbors_h_pair(w)
-        if replicate_mode.startswith("Neighbors (vertical"):   return _neighbors_v_pair(w)
-        return []
+#         ax.set_xticks(np.arange(len(cols_used)))
+#         ax.set_yticks(np.arange(len(rows_used)))
+#         ax.set_xticklabels(cols_used)
+#         ax.set_yticklabels(rows_used)
+#         plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
 
-    if replicate_mode == "Custom (paired)":
-        for a, b in st.session_state.get("replicate_pairs", []):
-            if a in wells_present and b in wells_present:
-                pairs.add(tuple(sorted((a, b))))
-    else:
-        for w in wells_present:
-            for p in _partners_for(w):
-                if p in wells_present:
-                    pairs.add(tuple(sorted((w, p))))
+#         for i in range(n_rows):
+#             for j in range(n_cols):
+#                 value = heatmap_matrix.iloc[i, j]
+#                 if not np.isnan(value):
+#                     ax.text(j, i, f"{value:.1f}", ha="center", va="center",
+#                             color="white" if value > np.nanmax(heatmap_matrix.values)/2 else "black",
+#                             fontsize=5)
 
-    rep_rows = []
-    for a, b in sorted(pairs):
-        for ch in sorted(ctd["Channel"].unique()):
-            a_row = ctd[(ctd["Well"] == a) & (ctd["Channel"] == ch)]
-            b_row = ctd[(ctd["Well"] == b) & (ctd["Channel"] == ch)]
-            if not a_row.empty and not b_row.empty:
-                c1 = float(a_row["Ct_num"].iloc[0])
-                c2 = float(b_row["Ct_num"].iloc[0])
-                grp = a_row["Group"].iloc[0] if a_row["Group"].iloc[0] == b_row["Group"].iloc[0] else "Mixed"
-                rep_rows.append({
-                    "Pair": f"{a}↔{b}",
-                    "Channel": ch,
-                    "Group": grp,
-                    "Ct1": c1,
-                    "Ct2": c2,
-                    "MeanCt": float((c1 + c2) / 2.0),
-                    "StdCt": float(np.std([c1, c2], ddof=1)),
-                    "AbsΔCt": float(abs(c1 - c2)),
-                })
-
-    st.subheader("Replicate Ct STD")
-    if rep_rows:
-        rep_df = (pd.DataFrame(rep_rows)
-                    .sort_values(["Channel", "Pair"])
-                    .reset_index(drop=True)
-                    .round({"Ct1": 2, "Ct2": 2, "MeanCt": 2, "StdCt": 2, "AbsΔCt": 2}))
-        st.dataframe(rep_df, use_container_width=True)
-    else:
-        st.caption("No replicate pairs with valid Ct values were found.")
-elif threshold_enabled and not use_replicates:
-    st.caption("Enable replicates to see the STD table.")
-
-
-
-
-
-
-
-
-
-
-
-
-
+#         ax.set_title(f"Average RFU (First {debug_cycle_count} Cycles) - {debug_channel}")
+#         fig.colorbar(im, ax=ax)
+#         st.pyplot(fig)
+#     else:
+#         st.warning("No heatmap data available. Please check file format or platform selection.")
