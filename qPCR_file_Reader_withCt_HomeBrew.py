@@ -683,20 +683,22 @@ if uploaded_files and st.session_state.plot_ready:
     )
     
     # Tabs for clean layout
-    tab_plot, tab_ct, tab_stats = st.tabs(["Plot", "Ct table", "Replicate STD"])
-    
-    with tab_plot:
-        st.plotly_chart(fig, use_container_width=False)
-    
-    with tab_ct:
+tab_plot, tab_ct, tab_stats = st.tabs(["Plot", "Ct table", "Replicate STD"])
+
+with tab_plot:
+    st.plotly_chart(fig, use_container_width=False)
+
+with tab_ct:
     if ct_results:
         st.subheader("Ct Values")
         ct_df = pd.DataFrame(ct_results)
         st.dataframe(ct_df)
 
-        # --- Replicate STD summary (right under Ct table) ---
+with tab_stats:
+    # --- Replicate STD summary (moved here) ---
+    if ct_results:
         std_rows = []
-        ctd = ct_df.copy()
+        ctd = pd.DataFrame(ct_results).copy()
         ctd["Ct_num"] = pd.to_numeric(ctd["Ct"], errors="coerce")
         ctd = ctd.dropna(subset=["Ct_num"])
 
@@ -743,6 +745,10 @@ if uploaded_files and st.session_state.plot_ready:
             std_df = pd.DataFrame(std_rows).sort_values(["Channel", "Pair"]).reset_index(drop=True)
             st.subheader("Replicate STD")
             st.dataframe(std_df.round({"STD Ct": 2}), use_container_width=True)
+        else:
+            st.info("No replicate pairs with valid Ct values were found to compute STD.")
+    else:
+        st.info("No Ct values yet. Turn on 'Enable Threshold & Ct Calculation' and re-plot.")
 
 
 
