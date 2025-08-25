@@ -426,7 +426,6 @@ with col_clear1:
     if st.button("Clear Active Half"):
         _apply_bulk_selection(active_wells, False)
 with col_clear2:
-:
     if st.button("Clear All Wells"):
         _apply_bulk_selection(set(well_names), False)
 
