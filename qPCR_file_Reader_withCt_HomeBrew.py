@@ -912,7 +912,7 @@ elif use_baseline and baseline_method == "Homebrew Lift-off Fit":
 
 
 
-log_y = st.sidebar.toggle("Use Semilog Y-axis (log scale)")
+# log_y = st.sidebar.toggle("Use Semilog Y-axis (log scale)")
 
 threshold_enabled = st.sidebar.checkbox("Enable Threshold & Ct Calculation")
 per_channel_thresholds = {}
@@ -924,10 +924,8 @@ if threshold_enabled:
             f"Threshold for {ch}", min_value=0.0, value=default_thresh, step=100.0, key=f"threshold_{ch}"
         )
         
-# ----- auto tune
+# ----- auto tune ----
 
-log_y = st.sidebar.toggle("Use Semilog Y-axis (log scale)")
-per_channel_thresholds = {}
 
 st.sidebar.subheader("Auto-tune baseline (minimize replicate variability)")
 do_autotune = st.sidebar.checkbox("Enable auto-tune via replicate STD", value=False)
