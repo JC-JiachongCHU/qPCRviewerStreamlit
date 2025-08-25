@@ -689,144 +689,61 @@ if uploaded_files and st.session_state.plot_ready:
         st.plotly_chart(fig, use_container_width=False)
     
     with tab_ct:
-        if ct_results:
-            st.subheader("Ct Values")
-            ct_df = pd.DataFrame(ct_results)
-            st.dataframe(ct_df)
-    
-            # ---- Download (kept in Ct tab so it's next to the table) ----
-            include_conditional_formatting = st.checkbox("Include Conditional Formatting in Download", value=True)
-            output = io.BytesIO()
-            writer = pd.ExcelWriter(output, engine='openpyxl')
-    
-            plate_rows = ["A","B","C","D","E","F","G","H"] if plate_type == "96-well" else [chr(i) for i in range(ord("A"), ord("P")+1)]
-            plate_cols = list(range(1,13)) if plate_type == "96-well" else list(range(1,25))
-    
-            for channel in ct_df["Channel"].unique():
-                plate_matrix = pd.DataFrame(index=plate_rows, columns=plate_cols)
-                channel_df = ct_df[ct_df["Channel"] == channel]
-                for _, row in channel_df.iterrows():
-                    well = row["Well"]
-                    m = re.match(r"([A-Z]+)([0-9]+)", well)
-                    if m:
-                        r, c = m.group(1), int(m.group(2))
-                        ct_raw = str(row["Ct"]).strip()
-                        try:
-                            ct_value = float(ct_raw)
-                        except (ValueError, TypeError):
-                            ct_value = np.nan
-                        if r in plate_matrix.index and c in plate_matrix.columns:
-                            plate_matrix.at[r, c] = ct_value
-                plate_matrix.sort_index(axis=1, inplace=True)
-                plate_matrix.to_excel(writer, sheet_name=str(channel))
-    
-            writer.close()
-            output.seek(0)
-    
-            if include_conditional_formatting:
-                wb = load_workbook(output)
-                for sheetname in wb.sheetnames:
-                    ws = wb[sheetname]
-                    start_row = 2
-                    end_row = 9 if plate_type == "96-well" else 17
-                    end_col = 13 if plate_type == "96-well" else 25
-                    cell_range = f"B{start_row}:{get_column_letter(end_col)}{end_row}"
-    
-                    rule = ColorScaleRule(
-                        start_type='num', start_value=14, start_color='4F81BD',
-                        mid_type='percentile', mid_value=50, mid_color='FFFFFF',
-                        end_type='num', end_value=33, end_color='F8696B'
-                    )
-                    ws.conditional_formatting.add(cell_range, rule)
-    
-                    thin_border = Border(
-                        left=Side(style='thin', color='000000'),
-                        right=Side(style='thin', color='000000'),
-                        top=Side(style='thin', color='000000'),
-                        bottom=Side(style='thin', color='000000')
-                    )
-                    for row in ws.iter_rows(min_row=start_row, max_row=end_row, min_col=2, max_col=end_col):
-                        for cell in row:
-                            cell.border = thin_border
-    
-                final_output = io.BytesIO()
-                wb.save(final_output)
-                final_output.seek(0)
-            else:
-                final_output = output
-    
-            st.download_button(
-                label="Download Ct Results as XLSX (Plate Layout)",
-                data=final_output,
-                file_name=f"Ct_Results_{version}_plate_layout.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-    
-    with tab_stats:
-        stats = st.session_state.get("replicate_ct_stats") or []
-        if stats:
-            rep_df = pd.DataFrame(stats).sort_values(["Channel","Pair"]).reset_index(drop=True)
-            st.subheader("Replicate Ct statistics")
-            st.dataframe(
-                rep_df.round({"Ct1":2, "Ct2":2, "MeanCt":2, "StdCt":2, "AbsΔCt":2}),
-                use_container_width=True
-            )
+    if ct_results:
+        st.subheader("Ct Values")
+        ct_df = pd.DataFrame(ct_results)
+        st.dataframe(ct_df)
+
+        # --- Replicate STD summary (right under Ct table) ---
+        std_rows = []
+        ctd = ct_df.copy()
+        ctd["Ct_num"] = pd.to_numeric(ctd["Ct"], errors="coerce")
+        ctd = ctd.dropna(subset=["Ct_num"])
+
+        wells_present = set(ctd["Well"].unique())
+        pairs = set()
+
+        def _partners_for(w):
+            if replicate_mode.startswith("Left-Right"):
+                return _lr_pair(w)
+            if replicate_mode.startswith("Top-Down"):
+                return _td_pair(w)
+            if replicate_mode.startswith("Neighbors (horizontal"):
+                return _neighbors_h_pair(w)
+            if replicate_mode.startswith("Neighbors (vertical"):
+                return _neighbors_v_pair(w)
+            return []
+
+        if replicate_mode != "Custom (paired)":
+            for w in wells_present:
+                for p in _partners_for(w):
+                    if p in wells_present:
+                        pairs.add(tuple(sorted((w, p))))
         else:
-            st.caption("No replicate pairs with numeric Ct found.")
-    
-    
-    # --- Replicate STD summary (goes right after st.dataframe(ct_df)) ---
-    std_rows = []
-    ctd = ct_df.copy()
-    ctd["Ct_num"] = pd.to_numeric(ctd["Ct"], errors="coerce")
-    ctd = ctd.dropna(subset=["Ct_num"])
-    
-    wells_present = set(ctd["Well"].unique())
-    pairs = set()
-    
-    # Derive pairs from the current replicate pattern, even if the toggle is off
-    def _partners_for(w):
-        if replicate_mode.startswith("Left-Right"):
-            return _lr_pair(w)
-        if replicate_mode.startswith("Top-Down"):
-            return _td_pair(w)
-        if replicate_mode.startswith("Neighbors (horizontal"):
-            return _neighbors_h_pair(w)
-        if replicate_mode.startswith("Neighbors (vertical"):
-            return _neighbors_v_pair(w)
-        return []
-    
-    if replicate_mode != "Custom (paired)":
-        for w in wells_present:
-            for p in _partners_for(w):
-                if p in wells_present:
-                    pairs.add(tuple(sorted((w, p))))
-    else:
-        # Use user-defined custom pairs
-        for a, b in st.session_state.get("replicate_pairs", []):
-            if a in wells_present and b in wells_present:
-                pairs.add(tuple(sorted((a, b))))
-    
-    # Build rows: Group, A1 - A7, Channel, STD Ct
-    for a, b in sorted(pairs):
-        for ch in sorted(ctd["Channel"].unique()):
-            a_row = ctd[(ctd["Well"] == a) & (ctd["Channel"] == ch)]
-            b_row = ctd[(ctd["Well"] == b) & (ctd["Channel"] == ch)]
-            if not a_row.empty and not b_row.empty:
-                c1 = float(a_row["Ct_num"].iloc[0])
-                c2 = float(b_row["Ct_num"].iloc[0])
-                grp = a_row["Group"].iloc[0] if a_row["Group"].iloc[0] == b_row["Group"].iloc[0] else "Mixed"
-                std_rows.append({
-                    "Group": grp,
-                    "Pair": f"{a} - {b}",
-                    "Channel": ch,
-                    "STD Ct": float(np.std([c1, c2], ddof=1)),  # sample STD
-                })
-    
-    if std_rows:
-        std_df = pd.DataFrame(std_rows).sort_values(["Channel", "Pair"]).reset_index(drop=True)
-        st.subheader("Replicate STD")
-        st.dataframe(std_df.round({"STD Ct": 2}), use_container_width=True)
+            for a, b in st.session_state.get("replicate_pairs", []):
+                if a in wells_present and b in wells_present:
+                    pairs.add(tuple(sorted((a, b))))
+
+        for a, b in sorted(pairs):
+            for ch in sorted(ctd["Channel"].unique()):
+                a_row = ctd[(ctd["Well"] == a) & (ctd["Channel"] == ch)]
+                b_row = ctd[(ctd["Well"] == b) & (ctd["Channel"] == ch)]
+                if not a_row.empty and not b_row.empty:
+                    c1 = float(a_row["Ct_num"].iloc[0])
+                    c2 = float(b_row["Ct_num"].iloc[0])
+                    grp = a_row["Group"].iloc[0] if a_row["Group"].iloc[0] == b_row["Group"].iloc[0] else "Mixed"
+                    std_rows.append({
+                        "Group": grp,
+                        "Pair": f"{a} - {b}",
+                        "Channel": ch,
+                        "STD Ct": float(np.std([c1, c2], ddof=1)),
+                    })
+
+        if std_rows:
+            std_df = pd.DataFrame(std_rows).sort_values(["Channel", "Pair"]).reset_index(drop=True)
+            st.subheader("Replicate STD")
+            st.dataframe(std_df.round({"STD Ct": 2}), use_container_width=True)
+
 
 
 
