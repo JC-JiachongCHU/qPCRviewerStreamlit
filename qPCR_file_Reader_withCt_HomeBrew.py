@@ -332,12 +332,6 @@ selected_row = col1.selectbox("Select Entire Row", ["None"] + rows)
 selected_col = col2.selectbox("Select Entire Column", ["None"] + [str(c) for c in cols])
 select_all = st.checkbox("Select All Wells")
 
-quick_selected = set()
-if selected_row != "None":
-    quick_selected.update([f"{selected_row}{c}" for c in cols])
-if selected_col != "None":
-    quick_selected.update([f"{r}{selected_col}" for r in rows])
-
 # ---------- Replicate callback ----------
 def _on_checkbox_change(well: str):
     """Mirror the clicked well's state to its replicate partner(s) per current mode."""
@@ -385,38 +379,9 @@ if use_replicates:
         active_wells = set(well_names)
 
 
-# ---------- Manual well selection grid ----------
-st.write("Select Wells (click checkboxes):")
-for r in rows:
-    cols_container = st.columns(len(cols))
-    for c, col in zip(cols, cols_container):
-        well = f"{r}{c}"
-        key = f"{safe_group_key}_{well}"
-        disabled_cell = use_replicates and (well in greyed_wells)
 
-        # make sure key exists (belt & suspenders)
-        if key not in st.session_state:
-            st.session_state[key] = False
-
-        col.checkbox(
-            well,
-            key=key,
-            disabled=disabled_cell,
-            on_change=_on_checkbox_change,
-            args=(well,)
-        )
-# --- Determine which half is "active" when replicates are on ---
-half_cols = ncols // 2
-half_rows = nrows // 2
-if use_replicates and replicate_mode.startswith("Left-Right"):
-    active_wells = {f"{r}{c}" for r in rows for c in cols if c <= half_cols}   # left half
-elif use_replicates and replicate_mode.startswith("Top-Down"):
-    active_wells = {f"{rows[i]}{c}" for i in range(0, half_rows) for c in cols}  # top half
-else:
-    active_wells = set(well_names)  # no restriction
 
 # --- Bulk apply selection to session_state (and mirror to replicates) ---
-# ---- create keys if missing
 def _apply_bulk_selection(target_wells, state=True):
     st.session_state["__suppress_rep_cb__"] = True
     changed = False
@@ -428,7 +393,6 @@ def _apply_bulk_selection(target_wells, state=True):
             if st.session_state[k] != state:
                 st.session_state[k] = state
                 changed = True
-
             if use_replicates:
                 for p in replicate_partners(w):
                     pk = f"{safe_group_key}_{p}"
@@ -439,14 +403,14 @@ def _apply_bulk_selection(target_wells, state=True):
                         changed = True
     finally:
         st.session_state["__suppress_rep_cb__"] = False
-
     if changed:
         st.rerun()
-# --- Apply "Select All" to the active half (replicate mirroring fills the grey half) ---
+
+# --- Apply "Select All" to the clickable side (replicate mirroring fills the grey side) ---
 if select_all:
     _apply_bulk_selection(active_wells, True)
 
-# --- Apply quick row/column selection (restricted to active half) ---
+# --- Apply quick row/column selection (restricted to clickable side) ---
 bulk_targets = set()
 if selected_row != "None":
     bulk_targets |= {f"{selected_row}{c}" for c in cols}
@@ -454,8 +418,38 @@ if selected_col != "None":
     bulk_targets |= {f"{r}{selected_col}" for r in rows}
 bulk_targets &= active_wells
 if bulk_targets:
-    _apply_bulk_selection(sorted(bulk_targets), True)
+    _apply_bulk_selection(bulk_targets, True)
 
+# (Optional) Clear helpers
+col_clear1, col_clear2 = st.columns(2)
+with col_clear1:
+    if st.button("Clear Active Half"):
+        _apply_bulk_selection(active_wells, False)
+with col_clear2:
+:
+    if st.button("Clear All Wells"):
+        _apply_bulk_selection(set(well_names), False)
+
+    
+# ---------- Manual well selection grid ----------
+
+st.write("Select Wells (click checkboxes):")
+for r in rows:
+    cols_container = st.columns(len(cols))
+    for c, col in zip(cols, cols_container):
+        well = f"{r}{c}"
+        key = f"{safe_group_key}_{well}"
+        disabled_cell = use_replicates and (well in greyed_wells)
+        if key not in st.session_state:
+            st.session_state[key] = False
+        col.checkbox(
+            well,
+            key=key,
+            disabled=disabled_cell,
+            on_change=_on_checkbox_change,
+            args=(well,)
+        )
+        
 # (Optional) Clear helpers
 col_clear1, col_clear2 = st.columns(2)
 with col_clear1:
