@@ -449,14 +449,14 @@ for r in rows:
             args=(well,)
         )
         
-# (Optional) Clear helpers
-col_clear1, col_clear2 = st.columns(2)
-with col_clear1:
-    if st.button("Clear Active Half"):
-        _apply_bulk_selection(active_wells, False)
-with col_clear2:
-    if st.button("Clear All Wells"):
-        _apply_bulk_selection(set(well_names), False)
+# # (Optional) Clear helpers
+# col_clear1, col_clear2 = st.columns(2)
+# with col_clear1:
+#     if st.button("Clear Active Half"):
+#         _apply_bulk_selection(active_wells, False)
+# with col_clear2:
+#     if st.button("Clear All Wells"):
+#         _apply_bulk_selection(set(well_names), False)
 
 # ---------- Build selection ----------
 selected_wells = [
