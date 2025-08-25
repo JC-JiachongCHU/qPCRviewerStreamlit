@@ -824,7 +824,86 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
     
         writer.close()
         output.seek(0)
-    
+
+        # ----- Replicate STD block -----
+        if use_replicates:
+            st.subheader("Replicate Ct STD (paired)")
+
+            # Make a numeric copy of Ct values
+            ct_df_num = ct_df.copy()
+            ct_df_num["Ct_num"] = pd.to_numeric(ct_df_num["Ct"], errors="coerce")
+
+            rep_rows = []
+
+            # Helper: get replicate pairs for a group given current mode
+            def _pairs_for_group(wells_in_group: set):
+                pair_set = set()
+                if replicate_mode == "Custom (paired)":
+                    for a, b in st.session_state.get("replicate_pairs", []):
+                        if a in wells_in_group and b in wells_in_group:
+                            pair_set.add(tuple(sorted((a, b))))
+                else:
+                    # Derive pairs from the selected replicate pattern
+                    for w in wells_in_group:
+                        for p in replicate_partners(w):
+                            if p in wells_in_group:
+                                pair_set.add(tuple(sorted((w, p))))
+                return sorted(pair_set)
+
+            # Build rows: one line per (Group, Channel, pair)
+            for group, info in st.session_state["groups"].items():
+                wells_in_group = set(info["wells"])
+                pair_list = _pairs_for_group(wells_in_group)
+                if not pair_list:
+                    continue
+
+                # Iterate channels present in Ct table
+                for ch in ct_df_num["Channel"].unique():
+                    sub = ct_df_num[(ct_df_num["Group"] == group) & (ct_df_num["Channel"] == ch)]
+                    # Map: well -> Ct_num
+                    ct_map = {row["Well"]: row["Ct_num"] for _, row in sub.iterrows()}
+
+                    for a, b in pair_list:
+                        vals = [ct_map.get(a, np.nan), ct_map.get(b, np.nan)]
+                        vals = [v for v in vals if not pd.isna(v)]
+                        if len(vals) >= 2:
+                            mean_ct = float(np.mean(vals))
+                            std_ct  = float(np.std(vals, ddof=1))  # sample STD; for 2 reps = |Δ|/√2
+                            rep_rows.append({
+                                "Group": group,
+                                "Channel": ch,
+                                "Pair": f"{a} ↔ {b}",
+                                "n": len(vals),
+                                "Mean Ct": round(mean_ct, 2),
+                                "STD Ct": round(std_ct, 3),
+                            })
+                        else:
+                            rep_rows.append({
+                                "Group": group,
+                                "Channel": ch,
+                                "Pair": f"{a} ↔ {b}",
+                                "n": len(vals),
+                                "Mean Ct": None,
+                                "STD Ct": None,
+                            })
+
+            if rep_rows:
+                rep_df = pd.DataFrame(rep_rows).sort_values(["Group", "Channel", "Pair"]).reset_index(drop=True)
+                st.dataframe(rep_df, use_container_width=True)
+
+                # Optional quick download
+                rep_csv = rep_df.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    "Download Replicate STD (CSV)",
+                    data=rep_csv,
+                    file_name=f"Replicate_STD_{version}.csv",
+                    mime="text/csv",
+                )
+            else:
+                st.info("No valid replicate pairs with numeric Ct values were found for the current selection.")
+        # ----- End Replicate STD block -----
+
+        
         if include_conditional_formatting:
             wb = load_workbook(output)
             for sheetname in wb.sheetnames:
@@ -866,91 +945,4 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
         )
 
 
-# ------------------------
-# Debug Section - Heatmap
-# ------------------------
-# st.sidebar.subheader("[Debug] Heatmap")
-# enable_debug_heatmap = st.sidebar.checkbox("Enable Heatmap Debug Mode")
-# if enable_debug_heatmap:
-#     st.subheader("Debug Heatmap of Average Fluorescence")
 
-#     debug_channel = st.sidebar.selectbox("Select Channel for Heatmap", channel_options)
-#     debug_cycle_count = st.sidebar.number_input("Number of Cycles to Average", min_value=1, max_value=100, value=20)
-
-#     heatmap_matrix = None  # initialize to check later
-
-#     if platform == "QuantStudio (QS)" and uploaded_files:
-#         df = pd.read_excel(uploaded_files[0][1]) if uploaded_files[0][1].name.endswith("xlsx") else pd.read_csv(uploaded_files[0][1])
-#         df = df[df["Well Position"] != "Well Position"]
-#         df.iloc[:, 5:] = df.iloc[:, 5:].apply(pd.to_numeric, errors='coerce')
-#         rfu_cols = [col for col in df.columns if col.startswith("X")]
-#         debug_chan_idx = int(debug_channel) - 1
-
-#         detected_wells = df["Well Position"].dropna().unique()
-#         rows_used = sorted(set(w[0] for w in detected_wells if isinstance(w, str)))
-#         cols_used = sorted(set(int(w[1:]) for w in detected_wells if isinstance(w, str) and w[1:].isdigit()))
-#         heatmap_matrix = pd.DataFrame(np.nan, index=rows_used, columns=cols_used)
-
-#         for well in detected_wells:
-#             sub_df = df[df["Well Position"] == well].sort_values(by=df.columns[1])
-#             if debug_chan_idx < len(rfu_cols):
-#                 y = sub_df[rfu_cols[debug_chan_idx]].iloc[:debug_cycle_count]
-#                 avg_val = y.mean()
-#                 match = re.match(r"([A-Z]+)([0-9]+)", well)
-#                 if match:
-#                     r, c = match.group(1), int(match.group(2))
-#                     if r in plate_matrix.index and c in plate_matrix.columns:
-#                         plate_matrix.at[r, c] = float(row["Ct"])
-#                 if r in heatmap_matrix.index and c in heatmap_matrix.columns:
-#                     heatmap_matrix.loc[r, c] = avg_val
-
-#     elif platform == "Bio-Rad" and uploaded_files:
-#         match_key = channel_name_map.get(debug_channel, debug_channel.lower())
-#         matched_file = next((f for f in uploaded_files if match_key.lower() in f.name.lower()), None)
-#         if matched_file:
-#             df = pd.read_csv(matched_file)
-#             df.columns = df.columns.str.strip()
-#             df = df.loc[:, ~df.columns.str.contains("Unnamed")]
-#             detected_wells = [c for c in df.columns if isinstance(c, str) and len(c) >= 2 and c[0].isalpha() and c[1:].isdigit()]
-#             rows_used = sorted(set(w[0] for w in detected_wells))
-#             cols_used = sorted(set(int(w[1:]) for w in detected_wells))
-#             heatmap_matrix = pd.DataFrame(np.nan, index=rows_used, columns=cols_used)
-
-#             for well in detected_wells:
-#                 y = df[well].iloc[:debug_cycle_count]
-#                 avg_val = y.mean()
-#                 match = re.match(r"([A-Z]+)([0-9]+)", well)
-#                 if match:
-#                     r, c = match.group(1), int(match.group(2))
-#                     if r in plate_matrix.index and c in plate_matrix.columns:
-#                         plate_matrix.at[r, c] = float(row["Ct"])
-
-
-#     if heatmap_matrix is not None:
-#         # Plot heatmap
-#         rows_used = list(heatmap_matrix.index)
-#         cols_used = list(heatmap_matrix.columns)
-#         n_rows, n_cols = len(rows_used), len(cols_used)
-#         cell_size = 0.6
-#         fig, ax = plt.subplots(figsize=(n_cols * cell_size, n_rows * cell_size))
-#         im = ax.imshow(heatmap_matrix.values.astype(float), cmap='viridis', aspect='equal')
-
-#         ax.set_xticks(np.arange(len(cols_used)))
-#         ax.set_yticks(np.arange(len(rows_used)))
-#         ax.set_xticklabels(cols_used)
-#         ax.set_yticklabels(rows_used)
-#         plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
-
-#         for i in range(n_rows):
-#             for j in range(n_cols):
-#                 value = heatmap_matrix.iloc[i, j]
-#                 if not np.isnan(value):
-#                     ax.text(j, i, f"{value:.1f}", ha="center", va="center",
-#                             color="white" if value > np.nanmax(heatmap_matrix.values)/2 else "black",
-#                             fontsize=5)
-
-#         ax.set_title(f"Average RFU (First {debug_cycle_count} Cycles) - {debug_channel}")
-#         fig.colorbar(im, ax=ax)
-#         st.pyplot(fig)
-#     else:
-#         st.warning("No heatmap data available. Please check file format or platform selection.")
