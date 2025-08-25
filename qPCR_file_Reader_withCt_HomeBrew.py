@@ -774,6 +774,44 @@ if uploaded_files and st.session_state.plot_ready:
         else:
             st.caption("No replicate pairs with numeric Ct found.")
 
+# ======= After the per-well loop: compute & SHOW replicate Ct statistics automatically =======
+rep_rows = []
+if threshold_enabled:
+    replicate_pairs = list(st.session_state.get("replicate_pairs") or [])
+    if not replicate_pairs and "replicate_map" in st.session_state:
+        seen = set()
+        for a, b in (st.session_state.get("replicate_map") or {}).items():
+            pair = tuple(sorted((a, b)))
+            if pair[0] != pair[1] and pair not in seen:
+                seen.add(pair)
+                replicate_pairs.append(pair)
+
+    if replicate_pairs and ct_results:
+        ct_df = pd.DataFrame(ct_results)
+        ct_df["Ct_num"] = pd.to_numeric(ct_df["Ct"], errors="coerce")
+        ct_df = ct_df.dropna(subset=["Ct_num"])
+
+        for a, b in replicate_pairs:
+            for ch in sorted(ct_df["Channel"].unique()):
+                a_row = ct_df[(ct_df["Well"] == a) & (ct_df["Channel"] == ch)]
+                b_row = ct_df[(ct_df["Well"] == b) & (ct_df["Channel"] == ch)]
+                if not a_row.empty and not b_row.empty:
+                    c1 = float(a_row["Ct_num"].iloc[0]); c2 = float(b_row["Ct_num"].iloc[0])
+                    rep_rows.append({
+                        "Pair": f"{a}↔{b}", "Channel": ch,
+                        "Group1": a_row["Group"].iloc[0], "Group2": b_row["Group"].iloc[0],
+                        "Ct1": c1, "Ct2": c2,
+                        "MeanCt": float(np.mean([c1, c2])),
+                        "StdCt": float(np.std([c1, c2], ddof=1)),
+                        "AbsΔCt": float(abs(c1 - c2)),
+                    })
+
+st.session_state["replicate_ct_stats"] = rep_rows
+if rep_rows:
+    st.subheader("Replicate Ct statistics")
+    rep_df = pd.DataFrame(rep_rows).sort_values(["Channel","Pair"]).reset_index(drop=True)
+    st.dataframe(rep_df.round({"Ct1":2,"Ct2":2,"MeanCt":2,"StdCt":2,"AbsΔCt":2}), use_container_width=True)
+
 
 
 # # ======= Add threshold lines (only if enabled) =======
