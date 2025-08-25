@@ -187,6 +187,208 @@ def calculate_ct(x, y, threshold, startpoint = 10, use_4pl=True, return_std=Fals
     return (ct, None) if return_std else float(ct)
 
 
+# --- Pair builder reused for scoring ---
+def _pairs_for_group(wells_in_group: set, replicate_mode: str):
+    pair_set = set()
+    if replicate_mode == "Custom (paired)":
+        for a, b in st.session_state.get("replicate_pairs", []):
+            if a in wells_in_group and b in wells_in_group:
+                pair_set.add(tuple(sorted((a, b))))
+    else:
+        for w in wells_in_group:
+            for p in replicate_partners(w):
+                if p in wells_in_group:
+                    pair_set.add(tuple(sorted((w, p))))
+    return sorted(pair_set)
+
+# --- Preprocess a single trace exactly like your plotting path ---
+def _preprocess_trace(df, well, channel_name, rox_df, enable_deconvolution, deconv_target_channel, df_corr, alpha_value, normalize_to_rox):
+    y = df[well].copy()
+    if enable_deconvolution and (channel_name == deconv_target_channel) and (df_corr is not None) and (well in df_corr.columns):
+        y = y + alpha_value * df_corr[well]
+    if normalize_to_rox and (rox_df is not None) and (well in rox_df.columns) and (channel_name.upper() != "ROX"):
+        rs = rox_df[well]
+        if np.all(rs > 0):
+            y = y / rs
+    return y
+
+# --- Apply a baseline config + compute Ct for all selected wells -> replicate STDs + score ---
+def score_config(
+    dfs_by_channel: dict,         # {channel -> df}
+    rox_df,
+    df_corr,
+    enable_deconvolution: bool,
+    deconv_target_channel: str,
+    alpha_value: float,
+    normalize_to_rox: bool,
+    selected_channels: list,
+    per_channel_thresholds: dict,
+    groups: dict,                 # st.session_state["groups"]
+    replicate_mode: str,
+    config: dict,                 # see examples in run_autotune()
+):
+    # Build Ct table for this config
+    ct_rows = []
+    for channel_name in selected_channels:
+        df = dfs_by_channel.get(channel_name)
+        if df is None:
+            continue
+
+        for group, info in groups.items():
+            for well in info["wells"]:
+                if well not in df.columns:
+                    continue
+                y = _preprocess_trace(df, well, channel_name, rox_df,
+                                      enable_deconvolution, deconv_target_channel, df_corr,
+                                      alpha_value, normalize_to_rox)
+
+                # baseline modes
+                if config["method"] == "avgN":
+                    bs = config["baseline_start"]
+                    bc = config["baseline_cycles"]
+                    baseline = y.iloc[bs-1: bs-1+bc].mean()
+                    y_corr = y - baseline
+                else:
+                    y_corr, _ = spr_qpcr_background_correction(
+                        np.array(y),
+                        std_win=config["det_win"],
+                        prefit_start=config["prefit_start"] - 1,
+                        ratio=config.get("lift_ratio", 1.5),
+                        fit_end_pad=config.get("fit_end_pad", 6),
+                        start_point_pad=config.get("start_point_pad", max(0, config["det_win"]//2)),
+                        detector=config.get("detector", "std"),
+                        slope_min=config.get("slope_min", 50.0),
+                        fit_region=config.get("fit_region", "prefit"),
+                        back_offset=config.get("back_offset", 0),
+                    )
+
+                x = dfs_by_channel[channel_name]["Cycle"].values
+                thr = per_channel_thresholds.get(channel_name, 1000.0)
+                ct_val, _ = calculate_ct(x, np.array(y_corr), threshold=thr, startpoint=10, use_4pl=True, return_std=True)
+
+                ct_rows.append({
+                    "Group": group, "Well": well, "Channel": channel_name,
+                    "Ct_num": float(ct_val) if ct_val is not None else np.nan
+                })
+
+    if not ct_rows:
+        # no data -> worst score
+        return {"score": (float("inf"), float("inf"), 0.0), "coverage": 0.0, "stats": None}
+
+    ct_df_num = pd.DataFrame(ct_rows)
+
+    # Build replicate STDs
+    rep_stds = []
+    total_pairs = 0
+    for group, info in groups.items():
+        wells_in_group = set(info["wells"])
+        pair_list = _pairs_for_group(wells_in_group, replicate_mode)
+        if not pair_list:
+            continue
+        for ch in ct_df_num["Channel"].unique():
+            sub = ct_df_num[(ct_df_num["Group"] == group) & (ct_df_num["Channel"] == ch)]
+            ct_map = {row["Well"]: row["Ct_num"] for _, row in sub.iterrows()}
+
+            for a, b in pair_list:
+                total_pairs += 1
+                v1, v2 = ct_map.get(a, np.nan), ct_map.get(b, np.nan)
+                if not (np.isnan(v1) or np.isnan(v2)):
+                    # sample std for 2 replicates = |Δ|/√2
+                    rep_stds.append(float(np.std([v1, v2], ddof=1)))
+
+    if total_pairs == 0:
+        return {"score": (float("inf"), float("inf"), 0.0), "coverage": 0.0, "stats": None}
+
+    rep_stds = np.array(rep_stds, dtype=float)
+    if rep_stds.size == 0:
+        # no valid numeric pairs
+        return {"score": (float("inf"), float("inf"), 0.0), "coverage": 0.0, "stats": None}
+
+    median_std = float(np.nanmedian(rep_stds))
+    p75_std    = float(np.nanpercentile(rep_stds, 75))
+    coverage   = float(rep_stds.size) / float(total_pairs)
+
+    return {
+        "score": (median_std, p75_std, -coverage),  # sorting key (lower better; higher coverage better)
+        "coverage": coverage,
+        "stats": {"median": median_std, "p75": p75_std, "count": rep_stds.size, "total_pairs": total_pairs}
+    }
+def run_autotune(
+    dfs_by_channel, rox_df, df_corr,
+    enable_deconvolution, deconv_target_channel, alpha_value, normalize_to_rox,
+    selected_channels, per_channel_thresholds,
+    groups, replicate_mode, log_y: bool
+):
+    # ---- Search space (keep small/fast first; expand later if needed) ----
+    grid = []
+
+    # Average-of-N cycles
+    for bs in [3, 4, 5]:
+        for bc in [8, 10, 12]:
+            grid.append({"method": "avgN", "baseline_start": bs, "baseline_cycles": bc})
+
+    # Homebrew: STD detector
+    for win in [5, 7, 9]:
+        for ratio in [1.3, 1.5, 1.8]:
+            for pre in [2, 3, 4]:
+                # three fit-region styles
+                grid += [
+                    {"method": "homebrew", "detector": "std", "det_win": win, "lift_ratio": ratio,
+                     "prefit_start": pre, "fit_region": "prefit", "fit_end_pad": 6, "back_offset": 0,
+                     "start_point_pad": win//2},
+                    {"method": "homebrew", "detector": "std", "det_win": win, "lift_ratio": ratio,
+                     "prefit_start": pre, "fit_region": "window", "fit_end_pad": 0, "back_offset": 0,
+                     "start_point_pad": win//2},
+                    {"method": "homebrew", "detector": "std", "det_win": win, "lift_ratio": ratio,
+                     "prefit_start": pre, "fit_region": "window_back", "fit_end_pad": 0, "back_offset": 2,
+                     "start_point_pad": win//2},
+                ]
+
+    # Homebrew: slope detector (choose sensible defaults by Y scale)
+    slope_cands = ([0.01, 0.02, 0.05] if log_y else [30.0, 60.0, 90.0])
+    for win in [5, 7, 9]:
+        for sm in slope_cands:
+            for pre in [2, 3, 4]:
+                grid += [
+                    {"method": "homebrew", "detector": "slope", "det_win": win, "slope_min": sm,
+                     "prefit_start": pre, "fit_region": "prefit", "fit_end_pad": 6, "back_offset": 0,
+                     "start_point_pad": win//2},
+                    {"method": "homebrew", "detector": "slope", "det_win": win, "slope_min": sm,
+                     "prefit_start": pre, "fit_region": "window", "fit_end_pad": 0, "back_offset": 0,
+                     "start_point_pad": win//2},
+                    {"method": "homebrew", "detector": "slope", "det_win": win, "slope_min": sm,
+                     "prefit_start": pre, "fit_region": "window_back", "fit_end_pad": 0, "back_offset": 2,
+                     "start_point_pad": win//2},
+                ]
+
+    # ---- Evaluate ----
+    rows = []
+    for cfg in grid:
+        res = score_config(
+            dfs_by_channel, rox_df, df_corr,
+            enable_deconvolution, deconv_target_channel, alpha_value, normalize_to_rox,
+            selected_channels, per_channel_thresholds,
+            groups, replicate_mode, cfg
+        )
+        med, p75, neg_cov = res["score"]
+        rows.append({
+            "method": cfg["method"],
+            "detector": cfg.get("detector", "avgN"),
+            "config": cfg,
+            "median_STD": med,
+            "p75_STD": p75,
+            "coverage": -neg_cov,
+        })
+
+    # Sort by (median, p75, -coverage)
+    df_res = pd.DataFrame(rows)
+    df_res = df_res.sort_values(["median_STD", "p75_STD", "coverage"], ascending=[True, True, False]).reset_index(drop=True)
+    return df_res
+
+# === Here we GO! ===
+
+
+
 
 # timestamp = datetime.datetime.now().strftime("%Y/%m/%d %H:%M")
 version = "v1.2.0"
@@ -560,6 +762,22 @@ else:
 
 
 # ==== plot ====
+channel_name_map = {
+    "FAM": "FAM",
+    "HEX": "HEX",
+    "Cy5": "Cy5",
+    "Cy5.5": "Cy5-5",
+    "ROX": "ROX",
+    "SYBR": "SYBR"
+}
+
+channel_styles = [
+    {"dash": "solid",     "symbol": None},
+    {"dash": "dash",      "symbol": None},
+    {"dash": "solid",     "symbol": "triangle-up"},
+    {"dash": "solid",     "symbol": "square"},
+    {"dash": "solid",     "symbol": "x"}
+]
 
 # Plot settings
 # st.sidebar.subheader("Plot Settings")
@@ -592,7 +810,35 @@ selected_channels = st.sidebar.multiselect("Select Channels to Plot", channel_op
 
 normalize_to_rox = st.sidebar.checkbox("Normalize fluorescence to ROX channel")
 
+# ----- autotune
+# Build dicts once so autotune & plotting share them
+dfs_by_channel = {}
+df_corr = None
+rox_df = None
 
+if normalize_to_rox:
+    rox_file = next((f for f in uploaded_files if "rox" in f.name.lower()), None)
+    if rox_file:
+        rox_df = pd.read_csv(rox_file)
+
+for channel_name in selected_channels:
+    match_key = channel_name_map.get(channel_name, channel_name.lower())
+    matched_file = next((f for f in uploaded_files if match_key.lower() in f.name.lower()), None)
+    if matched_file:
+        df = pd.read_csv(matched_file)
+        df.columns = df.columns.str.strip()
+        df = df.loc[:, ~df.columns.str.contains("Unnamed")]
+        dfs_by_channel[channel_name] = df
+
+if enable_deconvolution:
+    match_key_corr = channel_name_map.get(deconv_correction_channel, deconv_correction_channel.lower())
+    corr_file = next((f for f in uploaded_files if match_key_corr.lower() in f.name.lower()), None)
+    if corr_file:
+        df_corr = pd.read_csv(corr_file, comment='#')
+        df_corr.columns = df_corr.columns.str.strip()
+        df_corr = df_corr.loc[:, ~df_corr.columns.str.contains("Unnamed")]
+
+#  ---- baseline settings
 
 # Baseline, Log Y, Threshold
 st.sidebar.subheader("Step 3: Baseline Settings")
@@ -661,7 +907,7 @@ elif use_baseline and baseline_method == "Homebrew Lift-off Fit":
     start_point_pad = st.sidebar.number_input(
         "Lift-off mark offset (i + ...)", min_value=-30, max_value=30, value=max(0, det_win//2), step=1
     )
-
+    
 
 
 
@@ -678,24 +924,28 @@ if threshold_enabled:
             f"Threshold for {ch}", min_value=0.0, value=default_thresh, step=100.0, key=f"threshold_{ch}"
         )
         
+# ----- auto tune
 
-channel_name_map = {
-    "FAM": "FAM",
-    "HEX": "HEX",
-    "Cy5": "Cy5",
-    "Cy5.5": "Cy5-5",
-    "ROX": "ROX",
-    "SYBR": "SYBR"
-}
+log_y = st.sidebar.toggle("Use Semilog Y-axis (log scale)")
+per_channel_thresholds = {}
 
-channel_styles = [
-    {"dash": "solid",     "symbol": None},
-    {"dash": "dash",      "symbol": None},
-    {"dash": "solid",     "symbol": "triangle-up"},
-    {"dash": "solid",     "symbol": "square"},
-    {"dash": "solid",     "symbol": "x"}
-]
+st.sidebar.subheader("Auto-tune baseline (minimize replicate variability)")
+do_autotune = st.sidebar.checkbox("Enable auto-tune via replicate STD", value=False)
+if do_autotune and uploaded_files:
+    if st.sidebar.button("Run auto-tune"):
+        leaderboard = run_autotune(
+            dfs_by_channel, rox_df, df_corr,
+            enable_deconvolution, deconv_target_channel, alpha_value, normalize_to_rox,
+            selected_channels, per_channel_thresholds,
+            st.session_state["groups"], replicate_mode, log_y
+        )
+        st.subheader("Auto-tune results (best first)")
+        show_cols = ["method","detector","median_STD","p75_STD","coverage","config"]
+        st.dataframe(leaderboard[show_cols].head(15), use_container_width=True)
 
+        # Pick best and optionally apply it back to UI (needs keys on your sidebar widgets if you want true ‘apply’)
+        best_cfg = leaderboard.iloc[0]["config"]
+        st.caption(f"Best config: {best_cfg}")
 
 ct_results = []
 
