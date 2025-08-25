@@ -609,146 +609,211 @@ if uploaded_files and st.session_state.plot_ready:
                                     "Channel": channel_name,
                                     "Ct": "Undetermined"
                                 })
+                    # === Auto compute & show replicate Ct STD (no tabs) ===
+                    if threshold_enabled and use_replicates:
+                        ct_df = pd.DataFrame(ct_results) if len(ct_results) else pd.DataFrame(columns=["Group","Well","Channel","Ct"])
+                        if not ct_df.empty:
+                            # keep only numeric Cts
+                            ct_df["Ct_num"] = pd.to_numeric(ct_df["Ct"], errors="coerce")
+                            ct_df = ct_df.dropna(subset=["Ct_num"])
+                            wells_present = set(ct_df["Well"].unique())
+                    
+                            # Build replicate pairs that actually exist in the Ct table
+                            pairs = set()
+                            def _partners_for(w):
+                                if replicate_mode.startswith("Left-Right"):
+                                    return _lr_pair(w)
+                                if replicate_mode.startswith("Top-Down"):
+                                    return _td_pair(w)
+                                if replicate_mode.startswith("Neighbors (horizontal"):
+                                    return _neighbors_h_pair(w)
+                                if replicate_mode.startswith("Neighbors (vertical"):
+                                    return _neighbors_v_pair(w)
+                                return []
+                    
+                            if replicate_mode == "Custom (paired)":
+                                for a, b in st.session_state.get("replicate_pairs", []):
+                                    if a in wells_present and b in wells_present:
+                                        pairs.add(tuple(sorted((a, b))))
+                            else:
+                                for w in wells_present:
+                                    for p in _partners_for(w):
+                                        if p in wells_present:
+                                            pairs.add(tuple(sorted((w, p))))
+                    
+                            # Compute STD per pair × channel
+                            rep_rows = []
+                            for a, b in sorted(pairs):
+                                for ch in sorted(ct_df["Channel"].unique()):
+                                    a_row = ct_df[(ct_df["Well"] == a) & (ct_df["Channel"] == ch)]
+                                    b_row = ct_df[(ct_df["Well"] == b) & (ct_df["Channel"] == ch)]
+                                    if not a_row.empty and not b_row.empty:
+                                        c1 = float(a_row["Ct_num"].iloc[0])
+                                        c2 = float(b_row["Ct_num"].iloc[0])
+                                        grp = a_row["Group"].iloc[0] if a_row["Group"].iloc[0] == b_row["Group"].iloc[0] else "Mixed"
+                                        rep_rows.append({
+                                            "Pair": f"{a}↔{b}",
+                                            "Channel": ch,
+                                            "Group": grp,
+                                            "Ct1": c1,
+                                            "Ct2": c2,
+                                            "MeanCt": float((c1 + c2) / 2.0),
+                                            "StdCt": float(np.std([c1, c2], ddof=1)),  # sample STD
+                                            "AbsΔCt": float(abs(c1 - c2)),
+                                        })
+                    
+                            st.subheader("Replicate Ct STD")
+                            if rep_rows:
+                                rep_df = (pd.DataFrame(rep_rows)
+                                            .sort_values(["Channel", "Pair"])
+                                            .reset_index(drop=True)
+                                            .round({"Ct1": 2, "Ct2": 2, "MeanCt": 2, "StdCt": 2, "AbsΔCt": 2}))
+                                st.dataframe(rep_df, use_container_width=True)
+                            else:
+                                st.caption("No replicate pairs with valid Ct values were found.")
+                    
+                    elif threshold_enabled and not use_replicates:
+                        st.caption("Enable replicates to see the STD table.")
 
 
-    # ======= After the per-well loop: compute replicate Ct statistics (only if pairs exist) =======
-    if threshold_enabled:
-        # Collect replicate pairs from session (custom UI) or map (if you built one)
-        replicate_pairs = list(st.session_state.get("replicate_pairs") or [])
-        if not replicate_pairs and "replicate_map" in st.session_state:
-            # Derive unique pairs from replicate_map if needed
-            seen = set()
-            for a, b in (st.session_state.get("replicate_map") or {}).items():
-                pair = tuple(sorted((a, b)))
-                if pair[0] != pair[1] and pair not in seen:
-                    seen.add(pair)
-                    replicate_pairs.append(pair)
+#     # ======= After the per-well loop: compute replicate Ct statistics (only if pairs exist) =======
+#     if threshold_enabled:
+#         # Collect replicate pairs from session (custom UI) or map (if you built one)
+#         replicate_pairs = list(st.session_state.get("replicate_pairs") or [])
+#         if not replicate_pairs and "replicate_map" in st.session_state:
+#             # Derive unique pairs from replicate_map if needed
+#             seen = set()
+#             for a, b in (st.session_state.get("replicate_map") or {}).items():
+#                 pair = tuple(sorted((a, b)))
+#                 if pair[0] != pair[1] and pair not in seen:
+#                     seen.add(pair)
+#                     replicate_pairs.append(pair)
     
-        if replicate_pairs:
-            # Build numeric Ct table from your existing ct_results
-            ct_df = pd.DataFrame(ct_results) if len(ct_results) else pd.DataFrame(columns=["Group","Well","Channel","Ct"])
-            if not ct_df.empty:
-                ct_df["Ct_num"] = pd.to_numeric(ct_df["Ct"], errors="coerce")
-                ct_df = ct_df.dropna(subset=["Ct_num"])
+#         if replicate_pairs:
+#             # Build numeric Ct table from your existing ct_results
+#             ct_df = pd.DataFrame(ct_results) if len(ct_results) else pd.DataFrame(columns=["Group","Well","Channel","Ct"])
+#             if not ct_df.empty:
+#                 ct_df["Ct_num"] = pd.to_numeric(ct_df["Ct"], errors="coerce")
+#                 ct_df = ct_df.dropna(subset=["Ct_num"])
     
-                rep_rows = []
-                for a, b in replicate_pairs:
-                    for ch in sorted(ct_df["Channel"].unique()):
-                        a_row = ct_df[(ct_df["Well"] == a) & (ct_df["Channel"] == ch)]
-                        b_row = ct_df[(ct_df["Well"] == b) & (ct_df["Channel"] == ch)]
-                        if not a_row.empty and not b_row.empty:
-                            cts = [float(a_row["Ct_num"].iloc[0]), float(b_row["Ct_num"].iloc[0])]
-                            rep_rows.append({
-                                "Pair": f"{a}↔{b}",
-                                "Channel": ch,
-                                "Group1": a_row["Group"].iloc[0],
-                                "Group2": b_row["Group"].iloc[0],
-                                "Ct1": cts[0],
-                                "Ct2": cts[1],
-                                "MeanCt": float(np.mean(cts)),
-                                "StdCt": float(np.std(cts, ddof=1)),   # sample STD
-                                "AbsΔCt": float(abs(cts[0] - cts[1])),
-                            })
+#                 rep_rows = []
+#                 for a, b in replicate_pairs:
+#                     for ch in sorted(ct_df["Channel"].unique()):
+#                         a_row = ct_df[(ct_df["Well"] == a) & (ct_df["Channel"] == ch)]
+#                         b_row = ct_df[(ct_df["Well"] == b) & (ct_df["Channel"] == ch)]
+#                         if not a_row.empty and not b_row.empty:
+#                             cts = [float(a_row["Ct_num"].iloc[0]), float(b_row["Ct_num"].iloc[0])]
+#                             rep_rows.append({
+#                                 "Pair": f"{a}↔{b}",
+#                                 "Channel": ch,
+#                                 "Group1": a_row["Group"].iloc[0],
+#                                 "Group2": b_row["Group"].iloc[0],
+#                                 "Ct1": cts[0],
+#                                 "Ct2": cts[1],
+#                                 "MeanCt": float(np.mean(cts)),
+#                                 "StdCt": float(np.std(cts, ddof=1)),   # sample STD
+#                                 "AbsΔCt": float(abs(cts[0] - cts[1])),
+#                             })
     
-                st.session_state["replicate_ct_stats"] = rep_rows
+#                 st.session_state["replicate_ct_stats"] = rep_rows
     
-                # Optional: show table
-                if rep_rows:
-                    st.subheader("Replicate Ct statistics")
-                    rep_df = pd.DataFrame(rep_rows)
-                    st.dataframe(
-                        rep_df.sort_values(["Channel","Pair"]).reset_index(drop=True)
-                              .round({"Ct1": 2, "Ct2": 2, "MeanCt": 2, "StdCt": 2, "AbsΔCt": 2}),
-                        use_container_width=True
-                    )
+#                 # Optional: show table
+#                 if rep_rows:
+#                     st.subheader("Replicate Ct statistics")
+#                     rep_df = pd.DataFrame(rep_rows)
+#                     st.dataframe(
+#                         rep_df.sort_values(["Channel","Pair"]).reset_index(drop=True)
+#                               .round({"Ct1": 2, "Ct2": 2, "MeanCt": 2, "StdCt": 2, "AbsΔCt": 2}),
+#                         use_container_width=True
+#                     )
     
-    # ======= Add threshold lines (only if enabled) =======
-    if threshold_enabled:
-        for ch in selected_channels:
-            channel_threshold = per_channel_thresholds.get(ch, 1000.0)
-            fig.add_hline(
-                y=channel_threshold, line_dash="dot", line_color="gray",
-                annotation_text=f"{ch} Threshold = {channel_threshold} ",
-                annotation_position="top right"
-            )
+#     # ======= Add threshold lines (only if enabled) =======
+#     if threshold_enabled:
+#         for ch in selected_channels:
+#             channel_threshold = per_channel_thresholds.get(ch, 1000.0)
+#             fig.add_hline(
+#                 y=channel_threshold, line_dash="dot", line_color="gray",
+#                 annotation_text=f"{ch} Threshold = {channel_threshold} ",
+#                 annotation_position="top right"
+#             )
     
-    # ======= ALWAYS render the plot =======
-    fig.update_layout(
-        title="Amplification Curves",
-        xaxis_title="Cycle",
-        yaxis_title="log₁₀(RFU)" if log_y else "RFU",
-        yaxis_type="log" if log_y else "linear",
-        legend=dict(font=dict(size=8), orientation="v", x=1.02, y=1, xanchor="left", yanchor="top"),
-        width=800, height=600
-    )
+#     # ======= ALWAYS render the plot =======
+#     fig.update_layout(
+#         title="Amplification Curves",
+#         xaxis_title="Cycle",
+#         yaxis_title="log₁₀(RFU)" if log_y else "RFU",
+#         yaxis_type="log" if log_y else "linear",
+#         legend=dict(font=dict(size=8), orientation="v", x=1.02, y=1, xanchor="left", yanchor="top"),
+#         width=800, height=600
+#     )
     
-    # Tabs for clean layout
-tab_plot, tab_ct, tab_stats = st.tabs(["Plot", "Ct table", "Replicate STD"])
+#     # Tabs for clean layout
+# tab_plot, tab_ct, tab_stats = st.tabs(["Plot", "Ct table", "Replicate STD"])
 
-with tab_plot:
-    st.plotly_chart(fig, use_container_width=False)
+# with tab_plot:
+#     st.plotly_chart(fig, use_container_width=False)
 
-with tab_ct:
-    if ct_results:
-        st.subheader("Ct Values")
-        ct_df = pd.DataFrame(ct_results)
-        st.dataframe(ct_df)
+# with tab_ct:
+#     if ct_results:
+#         st.subheader("Ct Values")
+#         ct_df = pd.DataFrame(ct_results)
+#         st.dataframe(ct_df)
 
-with tab_stats:
-    # --- Replicate STD summary (moved here) ---
-    if ct_results:
-        std_rows = []
-        ctd = pd.DataFrame(ct_results).copy()
-        ctd["Ct_num"] = pd.to_numeric(ctd["Ct"], errors="coerce")
-        ctd = ctd.dropna(subset=["Ct_num"])
+# with tab_stats:
+#     # --- Replicate STD summary (moved here) ---
+#     if ct_results:
+#         std_rows = []
+#         ctd = pd.DataFrame(ct_results).copy()
+#         ctd["Ct_num"] = pd.to_numeric(ctd["Ct"], errors="coerce")
+#         ctd = ctd.dropna(subset=["Ct_num"])
 
-        wells_present = set(ctd["Well"].unique())
-        pairs = set()
+#         wells_present = set(ctd["Well"].unique())
+#         pairs = set()
 
-        def _partners_for(w):
-            if replicate_mode.startswith("Left-Right"):
-                return _lr_pair(w)
-            if replicate_mode.startswith("Top-Down"):
-                return _td_pair(w)
-            if replicate_mode.startswith("Neighbors (horizontal"):
-                return _neighbors_h_pair(w)
-            if replicate_mode.startswith("Neighbors (vertical"):
-                return _neighbors_v_pair(w)
-            return []
+#         def _partners_for(w):
+#             if replicate_mode.startswith("Left-Right"):
+#                 return _lr_pair(w)
+#             if replicate_mode.startswith("Top-Down"):
+#                 return _td_pair(w)
+#             if replicate_mode.startswith("Neighbors (horizontal"):
+#                 return _neighbors_h_pair(w)
+#             if replicate_mode.startswith("Neighbors (vertical"):
+#                 return _neighbors_v_pair(w)
+#             return []
 
-        if replicate_mode != "Custom (paired)":
-            for w in wells_present:
-                for p in _partners_for(w):
-                    if p in wells_present:
-                        pairs.add(tuple(sorted((w, p))))
-        else:
-            for a, b in st.session_state.get("replicate_pairs", []):
-                if a in wells_present and b in wells_present:
-                    pairs.add(tuple(sorted((a, b))))
+#         if replicate_mode != "Custom (paired)":
+#             for w in wells_present:
+#                 for p in _partners_for(w):
+#                     if p in wells_present:
+#                         pairs.add(tuple(sorted((w, p))))
+#         else:
+#             for a, b in st.session_state.get("replicate_pairs", []):
+#                 if a in wells_present and b in wells_present:
+#                     pairs.add(tuple(sorted((a, b))))
 
-        for a, b in sorted(pairs):
-            for ch in sorted(ctd["Channel"].unique()):
-                a_row = ctd[(ctd["Well"] == a) & (ctd["Channel"] == ch)]
-                b_row = ctd[(ctd["Well"] == b) & (ctd["Channel"] == ch)]
-                if not a_row.empty and not b_row.empty:
-                    c1 = float(a_row["Ct_num"].iloc[0])
-                    c2 = float(b_row["Ct_num"].iloc[0])
-                    grp = a_row["Group"].iloc[0] if a_row["Group"].iloc[0] == b_row["Group"].iloc[0] else "Mixed"
-                    std_rows.append({
-                        "Group": grp,
-                        "Pair": f"{a} - {b}",
-                        "Channel": ch,
-                        "STD Ct": float(np.std([c1, c2], ddof=1)),
-                    })
+#         for a, b in sorted(pairs):
+#             for ch in sorted(ctd["Channel"].unique()):
+#                 a_row = ctd[(ctd["Well"] == a) & (ctd["Channel"] == ch)]
+#                 b_row = ctd[(ctd["Well"] == b) & (ctd["Channel"] == ch)]
+#                 if not a_row.empty and not b_row.empty:
+#                     c1 = float(a_row["Ct_num"].iloc[0])
+#                     c2 = float(b_row["Ct_num"].iloc[0])
+#                     grp = a_row["Group"].iloc[0] if a_row["Group"].iloc[0] == b_row["Group"].iloc[0] else "Mixed"
+#                     std_rows.append({
+#                         "Group": grp,
+#                         "Pair": f"{a} - {b}",
+#                         "Channel": ch,
+#                         "STD Ct": float(np.std([c1, c2], ddof=1)),
+#                     })
 
-        if std_rows:
-            std_df = pd.DataFrame(std_rows).sort_values(["Channel", "Pair"]).reset_index(drop=True)
-            st.subheader("Replicate STD")
-            st.dataframe(std_df.round({"STD Ct": 2}), use_container_width=True)
-        else:
-            st.info("No replicate pairs with valid Ct values were found to compute STD.")
-    else:
-        st.info("No Ct values yet. Turn on 'Enable Threshold & Ct Calculation' and re-plot.")
+#         if std_rows:
+#             std_df = pd.DataFrame(std_rows).sort_values(["Channel", "Pair"]).reset_index(drop=True)
+#             st.subheader("Replicate STD")
+#             st.dataframe(std_df.round({"STD Ct": 2}), use_container_width=True)
+#         else:
+#             st.info("No replicate pairs with valid Ct values were found to compute STD.")
+#     else:
+#         st.info("No Ct values yet. Turn on 'Enable Threshold & Ct Calculation' and re-plot.")
 
 
 
