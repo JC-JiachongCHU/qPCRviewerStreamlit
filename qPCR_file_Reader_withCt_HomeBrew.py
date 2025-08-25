@@ -477,7 +477,14 @@ channel_styles = [
 ct_results = []
 
 # Plotting
-if uploaded_files and st.sidebar.button("Plot Curves"):
+
+if "plot_ready" not in st.session_state:
+    st.session_state.plot_ready = False
+def _set_plot_ready():
+    st.session_state.plot_ready = True
+st.sidebar.button("Plot Curves", on_click=_set_plot_ready)
+
+if uploaded_files and st.session_state.plot_ready:
     fig = go.Figure()
 
     rox_df = None
