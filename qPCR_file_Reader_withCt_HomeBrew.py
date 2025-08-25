@@ -368,15 +368,15 @@ if use_replicates:
         st.caption("Replicates: Top↔Down pairing. Bottom half is greyed out (read-only).")
 
     elif replicate_mode.startswith("Neighbors (horizontal"):
-        # Grey out ODD columns (1,3,5,...); click EVEN columns (2,4,6,...)
-        greyed_wells = {f"{r}{c}" for r in rows for c in cols if (c % 2) == 1}
-        active_wells = {f"{r}{c}" for r in rows for c in cols if (c % 2) == 0}
+        # Grey out ODD columns (2,4,5,...); click EVEN columns (1,3,5,...)
+        greyed_wells = {f"{r}{c}" for r in rows for c in cols if (c % 2) == 0}
+        active_wells = {f"{r}{c}" for r in rows for c in cols if (c % 2) == 1}
         st.caption("Replicates: Horizontal neighbors. Odd columns are greyed (click 2,4,6,...).")
 
     elif replicate_mode.startswith("Neighbors (vertical"):
-        # Grey out ODD rows (A,C,E,...) -> indices 0,2,4,...; click EVEN rows (B,D,F,...)
-        greyed_wells = {f"{rows[i]}{c}" for i in range(0, nrows, 2) for c in cols}
-        active_wells = {f"{rows[i]}{c}" for i in range(1, nrows, 2) for c in cols}
+        # Grey out ODD rows (B,d,F,...) -> indices 1,3,5,...; click EVEN rows (A,C,E,...)
+        greyed_wells = {f"{rows[i]}{c}" for i in range(1, nrows, 2) for c in cols}
+        active_wells = {f"{rows[i]}{c}" for i in range(0, nrows, 2) for c in cols}
         st.caption("Replicates: Vertical neighbors. Odd rows (A,C,E,...) are greyed (click B,D,F,...).")
 
     else:
