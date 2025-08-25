@@ -384,6 +384,7 @@ if use_replicates:
         greyed_wells = set()
         active_wells = set(well_names)
 
+
 # ---------- Manual well selection grid ----------
 st.write("Select Wells (click checkboxes):")
 for r in rows:
@@ -391,14 +392,15 @@ for r in rows:
     for c, col in zip(cols, cols_container):
         well = f"{r}{c}"
         key = f"{safe_group_key}_{well}"
-        default_checked = select_all or (well in quick_selected)
-
-        # Disable if it's in the greyed half for the current replicate mode
         disabled_cell = use_replicates and (well in greyed_wells)
+
+        # make sure key exists (belt & suspenders)
+        if key not in st.session_state:
+            st.session_state[key] = False
+
         col.checkbox(
             well,
             key=key,
-            value=bool(st.session_state.get(key, default_checked)),
             disabled=disabled_cell,
             on_change=_on_checkbox_change,
             args=(well,)
@@ -414,19 +416,32 @@ else:
     active_wells = set(well_names)  # no restriction
 
 # --- Bulk apply selection to session_state (and mirror to replicates) ---
+# ---- create keys if missing
 def _apply_bulk_selection(target_wells, state=True):
     st.session_state["__suppress_rep_cb__"] = True
+    changed = False
     try:
         for w in target_wells:
-            key = f"{safe_group_key}_{w}"
-            st.session_state[key] = state
+            k = f"{safe_group_key}_{w}"
+            if k not in st.session_state:
+                st.session_state[k] = False
+            if st.session_state[k] != state:
+                st.session_state[k] = state
+                changed = True
+
             if use_replicates:
                 for p in replicate_partners(w):
-                    pkey = f"{safe_group_key}_{p}"
-                    st.session_state[pkey] = state
+                    pk = f"{safe_group_key}_{p}"
+                    if pk not in st.session_state:
+                        st.session_state[pk] = False
+                    if st.session_state[pk] != state:
+                        st.session_state[pk] = state
+                        changed = True
     finally:
         st.session_state["__suppress_rep_cb__"] = False
 
+    if changed:
+        st.rerun()
 # --- Apply "Select All" to the active half (replicate mirroring fills the grey half) ---
 if select_all:
     _apply_bulk_selection(active_wells, True)
