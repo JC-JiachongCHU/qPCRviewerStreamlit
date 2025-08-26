@@ -263,7 +263,7 @@ def score_config(
                     )
 
                 x = dfs_by_channel[channel_name]["Cycle"].values
-                thr = per_channel_thresholds.get(channel_name, 1000.0)
+                thr = per_channel_thresholds.get(channel_name, 0.13)
                 ct_val, _ = calculate_ct(x, np.array(y_corr), threshold=thr, startpoint=10, use_4pl=True, return_std=True)
 
                 ct_rows.append({
@@ -797,6 +797,12 @@ if color_mode == "Colormap":
 channel_options = ["FAM", "HEX", "Cy5", "Cy5.5", "ROX", "SYBR"]
 default_channels = ["FAM", "HEX"]
 
+# ---- Safe defaults (prevent NameError when deconvolution is off) ----
+deconv_target_channel = "Cy5"      # ignored if enable_deconvolution is False
+deconv_correction_channel = "Cy5.5"
+alpha_value = 0.7
+log_y = st.sidebar.toggle("Use Semilog Y-axis (log scale)", value=True)
+
 st.sidebar.subheader("Deconvolution Settings (Bio-Rad only)")
 enable_deconvolution = st.sidebar.checkbox("Enable Deconvolution for Bio-Rad")
 if enable_deconvolution:
@@ -829,6 +835,7 @@ for channel_name in selected_channels:
         df.columns = df.columns.str.strip()
         df = df.loc[:, ~df.columns.str.contains("Unnamed")]
         dfs_by_channel[channel_name] = df
+
 
 if enable_deconvolution:
     match_key_corr = channel_name_map.get(deconv_correction_channel, deconv_correction_channel.lower())
@@ -921,7 +928,7 @@ if threshold_enabled:
     for ch in selected_channels:
         default_thresh = 0.13  # you can set any default
         per_channel_thresholds[ch] = st.sidebar.number_input(
-            f"Threshold for {ch}", min_value=0.0, value=default_thresh, step=100.0, key=f"threshold_{ch}"
+            f"Threshold for {ch}", min_value=0.0, value=default_thresh, step=0.01, key=f"threshold_{ch}"
         )
         
 # ----- auto tune ----
@@ -1028,12 +1035,6 @@ if uploaded_files and st.sidebar.button("Plot Curves"):
                         if np.all(rox_signal > 0):
                             y = y / rox_signal
         
-                    # if use_baseline:
-                    #     if baseline_method == "Average of N cycles":
-                    #         baseline = y.iloc[baseline_start-1 : baseline_start-1+baseline_cycles].mean()
-                    #         y -= baseline
-                    #     elif baseline_method == "Homebrew Lift-off Fit":
-                    #         y, E = spr_qpcr_background_correction(np.array(y))
 
                     if use_baseline:
                         if baseline_method == "Average of N cycles":
