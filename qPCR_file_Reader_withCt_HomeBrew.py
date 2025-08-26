@@ -816,141 +816,142 @@ selected_channels = st.sidebar.multiselect("Select Channels to Plot", channel_op
 
 normalize_to_rox = st.sidebar.checkbox("Normalize fluorescence to ROX channel")
 
-# ----- autotune
-# Build dicts once so autotune & plotting share them
-dfs_by_channel = {}
-df_corr = None
-rox_df = None
+# # ----- autotune -----
+# # Build dicts once so autotune & plotting share them
+# dfs_by_channel = {}
+# df_corr = None
+# rox_df = None
 
-if normalize_to_rox:
-    rox_file = next((f for f in uploaded_files if "rox" in f.name.lower()), None)
-    if rox_file:
-        rox_df = pd.read_csv(rox_file)
+# if normalize_to_rox:
+#     rox_file = next((f for f in uploaded_files if "rox" in f.name.lower()), None)
+#     if rox_file:
+#         rox_df = pd.read_csv(rox_file)
 
-for channel_name in selected_channels:
-    match_key = channel_name_map.get(channel_name, channel_name.lower())
-    matched_file = next((f for f in uploaded_files if match_key.lower() in f.name.lower()), None)
-    if matched_file:
-        df = pd.read_csv(matched_file)
-        df.columns = df.columns.str.strip()
-        df = df.loc[:, ~df.columns.str.contains("Unnamed")]
-        dfs_by_channel[channel_name] = df
-
-
-if enable_deconvolution:
-    match_key_corr = channel_name_map.get(deconv_correction_channel, deconv_correction_channel.lower())
-    corr_file = next((f for f in uploaded_files if match_key_corr.lower() in f.name.lower()), None)
-    if corr_file:
-        df_corr = pd.read_csv(corr_file, comment='#')
-        df_corr.columns = df_corr.columns.str.strip()
-        df_corr = df_corr.loc[:, ~df_corr.columns.str.contains("Unnamed")]
-
-#  ---- baseline settings
-
-# Baseline, Log Y, Threshold
-st.sidebar.subheader("Step 3: Baseline Settings")
-use_baseline = st.sidebar.toggle("Apply Baseline Subtraction", value=False)
+# for channel_name in selected_channels:
+#     match_key = channel_name_map.get(channel_name, channel_name.lower())
+#     matched_file = next((f for f in uploaded_files if match_key.lower() in f.name.lower()), None)
+#     if matched_file:
+#         df = pd.read_csv(matched_file)
+#         df.columns = df.columns.str.strip()
+#         df = df.loc[:, ~df.columns.str.contains("Unnamed")]
+#         dfs_by_channel[channel_name] = df
 
 
-baseline_method = st.sidebar.radio(
-    "Baseline Method",
-    ["Average of N cycles", "Homebrew Lift-off Fit"],
-    index=1
-)
+# if enable_deconvolution:
+#     match_key_corr = channel_name_map.get(deconv_correction_channel, deconv_correction_channel.lower())
+#     corr_file = next((f for f in uploaded_files if match_key_corr.lower() in f.name.lower()), None)
+#     if corr_file:
+#         df_corr = pd.read_csv(corr_file, comment='#')
+#         df_corr.columns = df_corr.columns.str.strip()
+#         df_corr = df_corr.loc[:, ~df_corr.columns.str.contains("Unnamed")]
 
-if use_baseline and baseline_method == "Average of N cycles":
-    baseline_start = st.sidebar.number_input("Baseline start cycle", min_value=3, max_value=15, value=3, step=1)
-    baseline_cycles = st.sidebar.number_input("Number of cycles to average", min_value=1, max_value=20, value=10, step=1)
+# #  ---- baseline settings
 
-elif use_baseline and baseline_method == "Homebrew Lift-off Fit":
-    # 1) Choose detector first
-    detector_mode = st.sidebar.radio(
-        "Lift-off detector",
-        ["STD ratio", "Slope threshold"],
-        help="Choose how lift-off is detected."
-    )
-    detector_flag = "std" if detector_mode == "STD ratio" else "slope"
+# # Baseline, Log Y, Threshold
+# st.sidebar.subheader("Step 3: Baseline Settings")
+# use_baseline = st.sidebar.toggle("Apply Baseline Subtraction", value=False)
 
-    # 2) Show the appropriate window length input
-    if detector_flag == "std":
-        det_win = st.sidebar.number_input(
-            "STD window length (cycles)", min_value=3, max_value=25, value=7, step=1,
-            help="Rolling window used to compute S[i]."
-        )
-        lift_ratio = st.sidebar.number_input(
-            "Sensitivity ratio (S[i]/S_ref)", min_value=0.1, max_value=5.0, value=1.5, step=0.1
-        )
-        slope_min = 50.0  # unused in this mode
-    else:
-        det_win = st.sidebar.number_input(
-            "Slope window length (cycles)", min_value=3, max_value=25, value=7, step=1,
-            help="Window over which the linear slope is estimated."
-        )
-        slope_min = st.sidebar.number_input(
-            "Slope threshold (|Δy| per cycle)", min_value=0.0, max_value=1e6, value=50.0, step=1.0,
-            help="Units match your Y-axis: RFU/cycle (linear) or log10(RFU)/cycle (semilog)."
-        )
-        lift_ratio = 1.5  # unused in this mode
 
-    # Common knobs
-    prefit_start_cycle = st.sidebar.number_input(
-        "Prefit start cycle (1-based)", min_value=1, max_value=40, value=3, step=1
-    )
-    fit_region_label = st.sidebar.radio(
-        "Baseline fit region",
-        ["From prefit start", "Detection window", "Window slid back by K"]
-    )
-    if fit_region_label == "From prefit start":
-        fit_region = "prefit"
-        fit_end_pad = st.sidebar.number_input("Fit end offset (i + ...)", -30, 30, 6, 1)
-        back_offset = 0
-    elif fit_region_label == "Detection window":
-        fit_region, fit_end_pad, back_offset = "window", 0, 0
-    else:
-        fit_region = "window_back"
-        back_offset = st.sidebar.number_input("K (slide window back by K)", 0, 50, 2, 1)
-        fit_end_pad = 0
+# baseline_method = st.sidebar.radio(
+#     "Baseline Method",
+#     ["Average of N cycles", "Homebrew Lift-off Fit"],
+#     index=1
+# )
 
-    start_point_pad = st.sidebar.number_input(
-        "Lift-off mark offset (i + ...)", min_value=-30, max_value=30, value=max(0, det_win//2), step=1
-    )
+# if use_baseline and baseline_method == "Average of N cycles":
+#     baseline_start = st.sidebar.number_input("Baseline start cycle", min_value=3, max_value=15, value=3, step=1)
+#     baseline_cycles = st.sidebar.number_input("Number of cycles to average", min_value=1, max_value=20, value=10, step=1)
+
+# elif use_baseline and baseline_method == "Homebrew Lift-off Fit":
+#     # 1) Choose detector first
+#     detector_mode = st.sidebar.radio(
+#         "Lift-off detector",
+#         ["STD ratio", "Slope threshold"],
+#         help="Choose how lift-off is detected."
+#     )
+#     detector_flag = "std" if detector_mode == "STD ratio" else "slope"
+
+#     # 2) Show the appropriate window length input
+#     if detector_flag == "std":
+#         det_win = st.sidebar.number_input(
+#             "STD window length (cycles)", min_value=3, max_value=25, value=7, step=1,
+#             help="Rolling window used to compute S[i]."
+#         )
+#         lift_ratio = st.sidebar.number_input(
+#             "Sensitivity ratio (S[i]/S_ref)", min_value=0.1, max_value=5.0, value=1.5, step=0.1
+#         )
+#         slope_min = 50.0  # unused in this mode
+#     else:
+#         det_win = st.sidebar.number_input(
+#             "Slope window length (cycles)", min_value=3, max_value=25, value=7, step=1,
+#             help="Window over which the linear slope is estimated."
+#         )
+#         slope_min = st.sidebar.number_input(
+#             "Slope threshold (|Δy| per cycle)", min_value=0.0, max_value=1e6, value=50.0, step=1.0,
+#             help="Units match your Y-axis: RFU/cycle (linear) or log10(RFU)/cycle (semilog)."
+#         )
+#         lift_ratio = 1.5  # unused in this mode
+
+#     # Common knobs
+#     prefit_start_cycle = st.sidebar.number_input(
+#         "Prefit start cycle (1-based)", min_value=1, max_value=40, value=3, step=1
+#     )
+#     fit_region_label = st.sidebar.radio(
+#         "Baseline fit region",
+#         ["From prefit start", "Detection window", "Window slid back by K"]
+#     )
+#     if fit_region_label == "From prefit start":
+#         fit_region = "prefit"
+#         fit_end_pad = st.sidebar.number_input("Fit end offset (i + ...)", -30, 30, 6, 1)
+#         back_offset = 0
+#     elif fit_region_label == "Detection window":
+#         fit_region, fit_end_pad, back_offset = "window", 0, 0
+#     else:
+#         fit_region = "window_back"
+#         back_offset = st.sidebar.number_input("K (slide window back by K)", 0, 50, 2, 1)
+#         fit_end_pad = 0
+
+#     start_point_pad = st.sidebar.number_input(
+#         "Lift-off mark offset (i + ...)", min_value=-30, max_value=30, value=max(0, det_win//2), step=1
+#     )
     
 
 
 
 
-# log_y = st.sidebar.toggle("Use Semilog Y-axis (log scale)")
+# # log_y = st.sidebar.toggle("Use Semilog Y-axis (log scale)")
 
-threshold_enabled = st.sidebar.checkbox("Enable Threshold & Ct Calculation")
-per_channel_thresholds = {}
-if threshold_enabled:
-    st.sidebar.markdown("**Per-Channel Thresholds:**")
-    for ch in selected_channels:
-        default_thresh = 0.13  # you can set any default
-        per_channel_thresholds[ch] = st.sidebar.number_input(
-            f"Threshold for {ch}", min_value=0.0, value=default_thresh, step=0.01, key=f"threshold_{ch}"
-        )
+# threshold_enabled = st.sidebar.checkbox("Enable Threshold & Ct Calculation")
+# per_channel_thresholds = {}
+# if threshold_enabled:
+#     st.sidebar.markdown("**Per-Channel Thresholds:**")
+#     for ch in selected_channels:
+#         default_thresh = 0.13  # you can set any default
+#         per_channel_thresholds[ch] = st.sidebar.number_input(
+#             f"Threshold for {ch}", min_value=0.0, value=default_thresh, step=0.01, key=f"threshold_{ch}"
+#         )
         
-# ----- auto tune ----
+# # ----- auto tune ----
 
 
-st.sidebar.subheader("Auto-tune baseline (minimize replicate variability)")
-do_autotune = st.sidebar.checkbox("Enable auto-tune via replicate STD", value=False)
-if do_autotune and uploaded_files:
-    if st.sidebar.button("Run auto-tune"):
-        leaderboard = run_autotune(
-            dfs_by_channel, rox_df, df_corr,
-            enable_deconvolution, deconv_target_channel, alpha_value, normalize_to_rox,
-            selected_channels, per_channel_thresholds,
-            st.session_state["groups"], replicate_mode, log_y
-        )
-        st.subheader("Auto-tune results (best first)")
-        show_cols = ["method","detector","median_STD","p75_STD","coverage","config"]
-        st.dataframe(leaderboard[show_cols].head(15), use_container_width=True)
+# st.sidebar.subheader("Auto-tune baseline (minimize replicate variability)")
+# do_autotune = st.sidebar.checkbox("Enable auto-tune via replicate STD", value=False)
+# if do_autotune and uploaded_files:
+#     if st.sidebar.button("Run auto-tune"):
+#         leaderboard = run_autotune(
+#             dfs_by_channel, rox_df, df_corr,
+#             enable_deconvolution, deconv_target_channel, alpha_value, normalize_to_rox,
+#             selected_channels, per_channel_thresholds,
+#             st.session_state["groups"], replicate_mode, log_y
+#         )
+#         st.subheader("Auto-tune results (best first)")
+#         show_cols = ["method","detector","median_STD","p75_STD","coverage","config"]
+#         st.dataframe(leaderboard[show_cols].head(15), use_container_width=True)
 
-        # Pick best and optionally apply it back to UI (needs keys on your sidebar widgets if you want true ‘apply’)
-        best_cfg = leaderboard.iloc[0]["config"]
-        st.caption(f"Best config: {best_cfg}")
+#         # Pick best and optionally apply it back to UI (needs keys on your sidebar widgets if you want true ‘apply’)
+#         best_cfg = leaderboard.iloc[0]["config"]
+#         st.caption(f"Best config: {best_cfg}")
+
 
 ct_results = []
 
