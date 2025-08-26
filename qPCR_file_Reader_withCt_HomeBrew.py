@@ -845,81 +845,81 @@ normalize_to_rox = st.sidebar.checkbox("Normalize fluorescence to ROX channel")
 #         df_corr.columns = df_corr.columns.str.strip()
 #         df_corr = df_corr.loc[:, ~df_corr.columns.str.contains("Unnamed")]
 
-# #  ---- baseline settings
+#  ---- baseline settings
 
-# # Baseline, Log Y, Threshold
-# st.sidebar.subheader("Step 3: Baseline Settings")
-# use_baseline = st.sidebar.toggle("Apply Baseline Subtraction", value=False)
+# Baseline, Log Y, Threshold
+st.sidebar.subheader("Step 3: Baseline Settings")
+use_baseline = st.sidebar.toggle("Apply Baseline Subtraction", value=False)
 
 
-# baseline_method = st.sidebar.radio(
-#     "Baseline Method",
-#     ["Average of N cycles", "Homebrew Lift-off Fit"],
-#     index=1
-# )
+baseline_method = st.sidebar.radio(
+    "Baseline Method",
+    ["Average of N cycles", "Homebrew Lift-off Fit"],
+    index=1
+)
 
-# if use_baseline and baseline_method == "Average of N cycles":
-#     baseline_start = st.sidebar.number_input("Baseline start cycle", min_value=3, max_value=15, value=3, step=1)
-#     baseline_cycles = st.sidebar.number_input("Number of cycles to average", min_value=1, max_value=20, value=10, step=1)
+if use_baseline and baseline_method == "Average of N cycles":
+    baseline_start = st.sidebar.number_input("Baseline start cycle", min_value=3, max_value=15, value=3, step=1)
+    baseline_cycles = st.sidebar.number_input("Number of cycles to average", min_value=1, max_value=20, value=10, step=1)
 
-# elif use_baseline and baseline_method == "Homebrew Lift-off Fit":
-#     # 1) Choose detector first
-#     detector_mode = st.sidebar.radio(
-#         "Lift-off detector",
-#         ["STD ratio", "Slope threshold"],
-#         help="Choose how lift-off is detected."
-#     )
-#     detector_flag = "std" if detector_mode == "STD ratio" else "slope"
+elif use_baseline and baseline_method == "Homebrew Lift-off Fit":
+    # 1) Choose detector first
+    detector_mode = st.sidebar.radio(
+        "Lift-off detector",
+        ["STD ratio", "Slope threshold"],
+        help="Choose how lift-off is detected."
+    )
+    detector_flag = "std" if detector_mode == "STD ratio" else "slope"
 
-#     # 2) Show the appropriate window length input
-#     if detector_flag == "std":
-#         det_win = st.sidebar.number_input(
-#             "STD window length (cycles)", min_value=3, max_value=25, value=7, step=1,
-#             help="Rolling window used to compute S[i]."
-#         )
-#         lift_ratio = st.sidebar.number_input(
-#             "Sensitivity ratio (S[i]/S_ref)", min_value=0.1, max_value=5.0, value=1.5, step=0.1
-#         )
-#         slope_min = 50.0  # unused in this mode
-#     else:
-#         det_win = st.sidebar.number_input(
-#             "Slope window length (cycles)", min_value=3, max_value=25, value=7, step=1,
-#             help="Window over which the linear slope is estimated."
-#         )
-#         slope_min = st.sidebar.number_input(
-#             "Slope threshold (|Δy| per cycle)", min_value=0.0, max_value=1e6, value=50.0, step=1.0,
-#             help="Units match your Y-axis: RFU/cycle (linear) or log10(RFU)/cycle (semilog)."
-#         )
-#         lift_ratio = 1.5  # unused in this mode
+    # 2) Show the appropriate window length input
+    if detector_flag == "std":
+        det_win = st.sidebar.number_input(
+            "STD window length (cycles)", min_value=3, max_value=25, value=7, step=1,
+            help="Rolling window used to compute S[i]."
+        )
+        lift_ratio = st.sidebar.number_input(
+            "Sensitivity ratio (S[i]/S_ref)", min_value=0.1, max_value=5.0, value=1.5, step=0.1
+        )
+        slope_min = 50.0  # unused in this mode
+    else:
+        det_win = st.sidebar.number_input(
+            "Slope window length (cycles)", min_value=3, max_value=25, value=7, step=1,
+            help="Window over which the linear slope is estimated."
+        )
+        slope_min = st.sidebar.number_input(
+            "Slope threshold (|Δy| per cycle)", min_value=0.0, max_value=1e6, value=50.0, step=1.0,
+            help="Units match your Y-axis: RFU/cycle (linear) or log10(RFU)/cycle (semilog)."
+        )
+        lift_ratio = 1.5  # unused in this mode
 
-#     # Common knobs
-#     prefit_start_cycle = st.sidebar.number_input(
-#         "Prefit start cycle (1-based)", min_value=1, max_value=40, value=3, step=1
-#     )
-#     fit_region_label = st.sidebar.radio(
-#         "Baseline fit region",
-#         ["From prefit start", "Detection window", "Window slid back by K"]
-#     )
-#     if fit_region_label == "From prefit start":
-#         fit_region = "prefit"
-#         fit_end_pad = st.sidebar.number_input("Fit end offset (i + ...)", -30, 30, 6, 1)
-#         back_offset = 0
-#     elif fit_region_label == "Detection window":
-#         fit_region, fit_end_pad, back_offset = "window", 0, 0
-#     else:
-#         fit_region = "window_back"
-#         back_offset = st.sidebar.number_input("K (slide window back by K)", 0, 50, 2, 1)
-#         fit_end_pad = 0
+    # Common knobs
+    prefit_start_cycle = st.sidebar.number_input(
+        "Prefit start cycle (1-based)", min_value=1, max_value=40, value=3, step=1
+    )
+    fit_region_label = st.sidebar.radio(
+        "Baseline fit region",
+        ["From prefit start", "Detection window", "Window slid back by K"]
+    )
+    if fit_region_label == "From prefit start":
+        fit_region = "prefit"
+        fit_end_pad = st.sidebar.number_input("Fit end offset (i + ...)", -30, 30, 6, 1)
+        back_offset = 0
+    elif fit_region_label == "Detection window":
+        fit_region, fit_end_pad, back_offset = "window", 0, 0
+    else:
+        fit_region = "window_back"
+        back_offset = st.sidebar.number_input("K (slide window back by K)", 0, 50, 2, 1)
+        fit_end_pad = 0
 
-#     start_point_pad = st.sidebar.number_input(
-#         "Lift-off mark offset (i + ...)", min_value=-30, max_value=30, value=max(0, det_win//2), step=1
-#     )
+    start_point_pad = st.sidebar.number_input(
+        "Lift-off mark offset (i + ...)", min_value=-30, max_value=30, value=max(0, det_win//2), step=1
+    )
     
 
 
 
 
-# log_y = st.sidebar.toggle("Use Semilog Y-axis (log scale)")
+log_y = st.sidebar.toggle("Use Semilog Y-axis (log scale)")
 
 threshold_enabled = st.sidebar.checkbox("Enable Threshold & Ct Calculation")
 per_channel_thresholds = {}
