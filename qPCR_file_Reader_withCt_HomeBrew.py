@@ -919,17 +919,17 @@ normalize_to_rox = st.sidebar.checkbox("Normalize fluorescence to ROX channel")
 
 
 
-# # log_y = st.sidebar.toggle("Use Semilog Y-axis (log scale)")
+# log_y = st.sidebar.toggle("Use Semilog Y-axis (log scale)")
 
-# threshold_enabled = st.sidebar.checkbox("Enable Threshold & Ct Calculation")
-# per_channel_thresholds = {}
-# if threshold_enabled:
-#     st.sidebar.markdown("**Per-Channel Thresholds:**")
-#     for ch in selected_channels:
-#         default_thresh = 0.13  # you can set any default
-#         per_channel_thresholds[ch] = st.sidebar.number_input(
-#             f"Threshold for {ch}", min_value=0.0, value=default_thresh, step=0.01, key=f"threshold_{ch}"
-#         )
+threshold_enabled = st.sidebar.checkbox("Enable Threshold & Ct Calculation")
+per_channel_thresholds = {}
+if threshold_enabled:
+    st.sidebar.markdown("**Per-Channel Thresholds:**")
+    for ch in selected_channels:
+        default_thresh = 0.13  # you can set any default
+        per_channel_thresholds[ch] = st.sidebar.number_input(
+            f"Threshold for {ch}", min_value=0.0, value=default_thresh, step=0.01, key=f"threshold_{ch}"
+        )
         
 # # ----- auto tune ----
 
