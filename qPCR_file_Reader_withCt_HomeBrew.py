@@ -579,7 +579,7 @@ def _qpos_threshold_from_trace(x, y_corr, target_ct=23.0, startpoint=10):
 
 
 # timestamp = datetime.datetime.now().strftime("%Y/%m/%d %H:%M")
-version = "v1.2.0"
+version = "v1.2.1"
 
 st.set_page_config(layout="wide")
 st.title("qPCR Viewer - Supports Bio-Rad")
