@@ -937,7 +937,7 @@ else:
     chan_opts = sorted(channel_dfs.keys())
     c1, c2 = st.columns([3,3])
     with c1:
-        target_chan = st.selectbox("Target channel", chan_opts, index=(chan_opts.index("HEX") if "HEX" in chan_opts else 0))
+        target_chan = st.selectbox("Target channel", chan_opts, index=(chan_opts.index("FAM") if "FAM" in chan_opts else 0))
     with c2:
         passive_ref_chan = st.selectbox("Passive reference channel", chan_opts, index=(chan_opts.index("ROX") if "ROX" in chan_opts else 0))
 
@@ -948,7 +948,7 @@ else:
         leak_choices = [c for c in chan_opts if c != target_chan]
         c1, c2 = st.columns([3,3])
         with c1:
-            leaking_chan = st.selectbox("Leaking channel", leak_choices, index=(leak_choices.index("FAM") if "FAM" in leak_choices else 0))
+            leaking_chan = st.selectbox("Leaking channel", leak_choices, index=(leak_choices.index("HEX") if "HEX" in leak_choices else 0))
         with c2:
             alpha = st.number_input("alpha (target + α·leak)", value=-0.010, step=0.001, format="%.3f")
 
@@ -1188,7 +1188,7 @@ else:
                         ax.plot(cycles, y_plot, color=color, linewidth=lw)
             
                     # Horizontal dashed line at threshold
-                    ax.axhline(y=threshold_Ct, linestyle="--", linewidth=1.5)
+                    ax.axhline(y=threshold_Ct, linestyle="--",color = "black", linewidth=1.5)
             
                     ax.set_xlabel("Cycle")
                     ax.set_ylabel("Background-corrected signal")
