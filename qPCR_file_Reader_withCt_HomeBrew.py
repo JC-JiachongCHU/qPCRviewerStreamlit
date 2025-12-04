@@ -1016,7 +1016,7 @@ else:
 
         all_well_flat = [w for row in selected_wells_plate for w in row]
         qpos_wells = st.multiselect("qPOS / reference wells", all_well_flat, default=all_well_flat[:2])
-        target_ct = st.number_input("Target Ct (avg over qPOS)", min_value=0.0, max_value=float(cycles[-1]), value=17.0, step=0.1)
+        target_ct = st.number_input("Target Ct (avg over qPOS)", min_value=0.0, max_value=float(cycles[-1]), value=23.0, step=0.1)
 
         threshold_Ct = None
         ct_ref_avg = None
