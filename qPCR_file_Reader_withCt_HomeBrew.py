@@ -35,91 +35,88 @@ def inverse_four_pl(threshold, a, b, c, d):
 def calculate_ct(x, y, threshold, startpoint=10, use_4pl=False, return_std=False, scale='log'):
     x = np.asarray(x); y = np.asarray(y)
 
-    if y[len(y)-1] - y[0] <= 0.1:
-        return (None, None) if return_std else (None)
-    
-    else:
-            
-        # drop NaNs
-        valid = np.isfinite(x) & np.isfinite(y)
-        x, y = x[valid], y[valid]
-        if x.size < 3:
+
+        
+    # drop NaNs
+    valid = np.isfinite(x) & np.isfinite(y)
+    x, y = x[valid], y[valid]
+    if x.size < 3:
+        return (None, None) if return_std else None
+
+    # ensure x ascending
+    order = np.argsort(x)
+    x, y = x[order], y[order]
+
+    # restrict to x >= startpoint (hard guarantee)
+    post = x >= startpoint
+    if np.count_nonzero(post) < 2:
+        return (None, None) if return_std else None
+    x_fit, y_fit = x[post], y[post]
+
+    # 4PL first (optional)
+    if use_4pl:
+        try:
+            if x_fit.size >= 5:
+                popt, pcov = curve_fit(four_param_logistic, x_fit, y_fit, maxfev=10000)
+                ct = inverse_four_pl(threshold, *popt)
+                if (ct is not None) and (x_fit[0] <= ct <= x_fit[-1]):
+                    if return_std:
+                        eps = 1e-8
+                        grads = np.zeros(4)
+                        for i in range(4):
+                            p_hi = np.array(popt); p_hi[i] += eps
+                            p_lo = np.array(popt); p_lo[i] -= eps
+                            ct_hi = inverse_four_pl(threshold, *p_hi)
+                            ct_lo = inverse_four_pl(threshold, *p_lo)
+                            grads[i] = (ct_hi - ct_lo) / (2*eps)
+                        ct_var = float(np.dot(grads.T, np.dot(pcov, grads)))
+                        ct_std = np.sqrt(ct_var) if ct_var >= 0 else np.nan
+                        return float(ct), float(ct_std)
+                    return float(ct)
+        except Exception:
+            pass  # fall through to interpolation
+
+    # Fallback: interpolate crossing within [x_fit[0], x_fit[-1]]
+    if scale == 'linear':
+        above = y_fit > threshold
+        if not np.any(above):
             return (None, None) if return_std else None
-    
-        # ensure x ascending
-        order = np.argsort(x)
-        x, y = x[order], y[order]
-    
-        # restrict to x >= startpoint (hard guarantee)
-        post = x >= startpoint
-        if np.count_nonzero(post) < 2:
-            return (None, None) if return_std else None
-        x_fit, y_fit = x[post], y[post]
-    
-        # 4PL first (optional)
-        if use_4pl:
-            try:
-                if x_fit.size >= 5:
-                    popt, pcov = curve_fit(four_param_logistic, x_fit, y_fit, maxfev=10000)
-                    ct = inverse_four_pl(threshold, *popt)
-                    if (ct is not None) and (x_fit[0] <= ct <= x_fit[-1]):
-                        if return_std:
-                            eps = 1e-8
-                            grads = np.zeros(4)
-                            for i in range(4):
-                                p_hi = np.array(popt); p_hi[i] += eps
-                                p_lo = np.array(popt); p_lo[i] -= eps
-                                ct_hi = inverse_four_pl(threshold, *p_hi)
-                                ct_lo = inverse_four_pl(threshold, *p_lo)
-                                grads[i] = (ct_hi - ct_lo) / (2*eps)
-                            ct_var = float(np.dot(grads.T, np.dot(pcov, grads)))
-                            ct_std = np.sqrt(ct_var) if ct_var >= 0 else np.nan
-                            return float(ct), float(ct_std)
-                        return float(ct)
-            except Exception:
-                pass  # fall through to interpolation
-    
-        # Fallback: interpolate crossing within [x_fit[0], x_fit[-1]]
-        if scale == 'linear':
-            above = y_fit > threshold
-            if not np.any(above):
-                return (None, None) if return_std else None
-            idx = int(np.argmax(above))
-            if idx == 0:
-                ct = float(x_fit[0])
-            else:
-                x1, x2 = x_fit[idx-1], x_fit[idx]
-                y1, y2 = y_fit[idx-1], y_fit[idx]
-                if y2 == y1:
-                    return (None, None) if return_std else None
-                ct = x1 + (threshold - y1) * (x2 - x1) / (y2 - y1)
-            return (float(ct), None) if return_std else float(ct)
-    
-        elif scale == 'log':
-            if (threshold is None) or (not np.isfinite(threshold)) or (threshold <= 0):
-                return (None, None) if return_std else None
-            pos = y_fit > 0
-            if np.count_nonzero(pos) < 2:
-                return (None, None) if return_std else None
-            xf = x_fit[pos]
-            yf_log = np.log10(y_fit[pos])
-            thr_log = np.log10(threshold)
-            above = yf_log > thr_log
-            if not np.any(above):
-                return (None, None) if return_std else None
-            idx = int(np.argmax(above))
-            if idx == 0:
-                ct = float(xf[0])
-            else:
-                x1, x2 = xf[idx-1], xf[idx]
-                y1, y2 = yf_log[idx-1], yf_log[idx]
-                if y2 == y1:
-                    return (None, None) if return_std else None
-                ct = x1 + (thr_log - y1) * (x2 - x1) / (y2 - y1)
-            return (float(ct), None) if return_std else float(ct)
-    
+        idx = int(np.argmax(above))
+        if idx == 0:
+            ct = float(x_fit[0])
         else:
-            raise ValueError("scale must be 'linear' or 'log'")
+            x1, x2 = x_fit[idx-1], x_fit[idx]
+            y1, y2 = y_fit[idx-1], y_fit[idx]
+            if y2 == y1:
+                return (None, None) if return_std else None
+            ct = x1 + (threshold - y1) * (x2 - x1) / (y2 - y1)
+        return (float(ct), None) if return_std else float(ct)
+
+    elif scale == 'log':
+        if (threshold is None) or (not np.isfinite(threshold)) or (threshold <= 0):
+            return (None, None) if return_std else None
+        pos = y_fit > 0
+        if np.count_nonzero(pos) < 2:
+            return (None, None) if return_std else None
+        xf = x_fit[pos]
+        yf_log = np.log10(y_fit[pos])
+        thr_log = np.log10(threshold)
+        above = yf_log > thr_log
+        if not np.any(above):
+            return (None, None) if return_std else None
+        idx = int(np.argmax(above))
+        if idx == 0:
+            ct = float(xf[0])
+        else:
+            x1, x2 = xf[idx-1], xf[idx]
+            y1, y2 = yf_log[idx-1], yf_log[idx]
+            if y2 == y1:
+                return (None, None) if return_std else None
+            ct = x1 + (thr_log - y1) * (x2 - x1) / (y2 - y1)
+        return (float(ct), None) if return_std else float(ct)
+
+    else:
+        raise ValueError("scale must be 'linear' or 'log'")
 
 
 
@@ -333,82 +330,88 @@ def spr_QSqpcr_background_dY_v5(std, test_signal, sigma_mult=2.0, min_points=4, 
     
     sigma = np.full(n, float(std))
 
-    
-    for i in range(startcycle + 1, n - window_size - 2):
-        # print (f'\n')
-        Sn[i] = y[i+window_size] - y[i]
-        Sn[i+1] = y[i+1+window_size] - y[i+1]
-        Sn[i+2] = y[i+2+window_size] - y[i+2]
-        
-        cond1 = (Sn[i] - Sn[i-1] > threshold)
-        cond2 = (Sn[i+1] - Sn[i] > threshold)
-        cond3 = (Sn[i+2] - Sn[i+1] > threshold)
-        # print (f'cycle = {i}')
-        # print (Sn[i] - Sn[i-1])
-        # print (Sn[i+1] - Sn[i])
-        # print (Sn[i+2] - Sn[i+1])
-        if (cond1 & cond2 & cond3).all():
-
-            start = i - 1 
-            end = i + window_size
-            # if window_size % 2 == 0:
-            #     start = i - 1 - window_size // 2
-            #     end = i + 2 + window_size // 2
-            # else:
-            #     start = i - 1 - (window_size - 1) // 2 - 1
-            #     end = i + 2 + (window_size - 1) // 2 - 1
-                
-            xf = np.arange(start, end)
-            yy = y[start:end].copy()
-            sig = sigma[start:end]
-
-            # Initial fit
-            mask = np.isfinite(yy) & np.isfinite(sig)
-            if mask.sum() < min_points:
-                popt, pcov = curve_fit(linear_exp_fit, xf, yy, p0=[1, 2, 0.1])  # p0 = initial guess
-                # a, b = np.polyfit(xf, yy, 1)
-                a,b,c = popt
-            else:
-                # a, b = np.polyfit(xf[mask], yy[mask], 1)
-                popt, pcov = curve_fit(linear_exp_fit, xf[mask], yy[mask], p0=[1, 2, 0.1])  # p0 = initial guess
-                a,b,c = popt
-                # Iteratively drop > sigma_mult * sigma residuals and refit
-                for _ in range(max_refit_iter):
-                    
-                    res  = yy - linear_exp_fit(xf,a,b,c)
-                    # print (f'res : {res}')
-                    keep = (np.abs(res) <= sigma_mult * sig) & mask
-                    if keep.sum() < min_points or keep.sum() == mask.sum():
-                        break
-                    popt, pcov = curve_fit(linear_exp_fit, xf, yy, p0=[1, 2, 0.1])  # p0 = initial guess
-                    a,b,c = popt
-                    mask = keep  # tighten for the next pass
-                    yy = yy[keep]
-                    xf = xf[keep]
-                    sig = sig[keep]
-                    mask = mask[keep]
-            # plt.plot(xf,yy)
-            # plt.plot(xf, linear_exp_fit(xf,a,b,c),'r--')
-            # plt.plot(A,y)
-            # plt.plot(A, linear_exp_fit(A,a,b,c),'r--')
-            # print (f'fitted line = {a}x + {b}2^x + {c}')       
-            # baseline = a * A + b
-            baseline = a * A + c
-            # print (f'baseline = {a}x + {c}')
-            E = (y - baseline) / baseline
-            start_point = end - 1 - 2
-            detected = True
-            expcurve = linear_exp_fit(A,a,b,c)
-            intercept = c
-            if returnbase:
-                return E, start_point, start, end, intercept, baseline, expcurve
-            else: return E, start_point, start, end, intercept
-
-    # if break 
-    if returnbase:
-        return y - np.nanmean(y[startcycle:startcycle+window_size]), -1, startcycle, startcycle+window_size, np.nanmean(y[startcycle:startcycle+window_size]), np.full(n, float(np.nanmean(y[startcycle:startcycle+window_size]))), y - np.nanmean(y[startcycle:startcycle+window_size])
+    if y[len(y)-1] - y[0] <= 0.1:
+        # if break 
+        if returnbase:
+            return y-y , -2, 0, len(y)-1, 0, np.full(n, 0), y - 0
+        else:
+            return y-7 , -2, 0, len(y)-1, 0
     else:
-        return y - np.nanmean(y[startcycle:startcycle+window_size]), -1, startcycle, startcycle+window_size, np.nanmean(y[startcycle:startcycle+window_size])
+        for i in range(startcycle + 1, n - window_size - 2):
+            # print (f'\n')
+            Sn[i] = y[i+window_size] - y[i]
+            Sn[i+1] = y[i+1+window_size] - y[i+1]
+            Sn[i+2] = y[i+2+window_size] - y[i+2]
+            
+            cond1 = (Sn[i] - Sn[i-1] > threshold)
+            cond2 = (Sn[i+1] - Sn[i] > threshold)
+            cond3 = (Sn[i+2] - Sn[i+1] > threshold)
+            # print (f'cycle = {i}')
+            # print (Sn[i] - Sn[i-1])
+            # print (Sn[i+1] - Sn[i])
+            # print (Sn[i+2] - Sn[i+1])
+            if (cond1 & cond2 & cond3).all():
+    
+                start = i - 1 
+                end = i + window_size
+                # if window_size % 2 == 0:
+                #     start = i - 1 - window_size // 2
+                #     end = i + 2 + window_size // 2
+                # else:
+                #     start = i - 1 - (window_size - 1) // 2 - 1
+                #     end = i + 2 + (window_size - 1) // 2 - 1
+                    
+                xf = np.arange(start, end)
+                yy = y[start:end].copy()
+                sig = sigma[start:end]
+    
+                # Initial fit
+                mask = np.isfinite(yy) & np.isfinite(sig)
+                if mask.sum() < min_points:
+                    popt, pcov = curve_fit(linear_exp_fit, xf, yy, p0=[1, 2, 0.1])  # p0 = initial guess
+                    # a, b = np.polyfit(xf, yy, 1)
+                    a,b,c = popt
+                else:
+                    # a, b = np.polyfit(xf[mask], yy[mask], 1)
+                    popt, pcov = curve_fit(linear_exp_fit, xf[mask], yy[mask], p0=[1, 2, 0.1])  # p0 = initial guess
+                    a,b,c = popt
+                    # Iteratively drop > sigma_mult * sigma residuals and refit
+                    for _ in range(max_refit_iter):
+                        
+                        res  = yy - linear_exp_fit(xf,a,b,c)
+                        # print (f'res : {res}')
+                        keep = (np.abs(res) <= sigma_mult * sig) & mask
+                        if keep.sum() < min_points or keep.sum() == mask.sum():
+                            break
+                        popt, pcov = curve_fit(linear_exp_fit, xf, yy, p0=[1, 2, 0.1])  # p0 = initial guess
+                        a,b,c = popt
+                        mask = keep  # tighten for the next pass
+                        yy = yy[keep]
+                        xf = xf[keep]
+                        sig = sig[keep]
+                        mask = mask[keep]
+                # plt.plot(xf,yy)
+                # plt.plot(xf, linear_exp_fit(xf,a,b,c),'r--')
+                # plt.plot(A,y)
+                # plt.plot(A, linear_exp_fit(A,a,b,c),'r--')
+                # print (f'fitted line = {a}x + {b}2^x + {c}')       
+                # baseline = a * A + b
+                baseline = a * A + c
+                # print (f'baseline = {a}x + {c}')
+                E = (y - baseline) / baseline
+                start_point = end - 1 - 2
+                detected = True
+                expcurve = linear_exp_fit(A,a,b,c)
+                intercept = c
+                if returnbase:
+                    return E, start_point, start, end, intercept, baseline, expcurve
+                else: return E, start_point, start, end, intercept
+    
+        # if break 
+        if returnbase:
+            return y - np.nanmean(y[startcycle:startcycle+window_size]), -1, startcycle, startcycle+window_size, np.nanmean(y[startcycle:startcycle+window_size]), np.full(n, float(np.nanmean(y[startcycle:startcycle+window_size]))), y - np.nanmean(y[startcycle:startcycle+window_size])
+        else:
+            return y - np.nanmean(y[startcycle:startcycle+window_size]), -1, startcycle, startcycle+window_size, np.nanmean(y[startcycle:startcycle+window_size])
 
 def calc_ct_func(x, y, thr):
     return calculate_ct(x, y,threshold=thr,startpoint=startcycle_to_use,use_4pl=False,return_std=False)
