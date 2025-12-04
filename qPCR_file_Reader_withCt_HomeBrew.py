@@ -35,86 +35,92 @@ def inverse_four_pl(threshold, a, b, c, d):
 def calculate_ct(x, y, threshold, startpoint=10, use_4pl=False, return_std=False, scale='log'):
     x = np.asarray(x); y = np.asarray(y)
 
-    # drop NaNs
-    valid = np.isfinite(x) & np.isfinite(y)
-    x, y = x[valid], y[valid]
-    if x.size < 3:
-        return (None, None) if return_std else None
-
-    # ensure x ascending
-    order = np.argsort(x)
-    x, y = x[order], y[order]
-
-    # restrict to x >= startpoint (hard guarantee)
-    post = x >= startpoint
-    if np.count_nonzero(post) < 2:
-        return (None, None) if return_std else None
-    x_fit, y_fit = x[post], y[post]
-
-    # 4PL first (optional)
-    if use_4pl:
-        try:
-            if x_fit.size >= 5:
-                popt, pcov = curve_fit(four_param_logistic, x_fit, y_fit, maxfev=10000)
-                ct = inverse_four_pl(threshold, *popt)
-                if (ct is not None) and (x_fit[0] <= ct <= x_fit[-1]):
-                    if return_std:
-                        eps = 1e-8
-                        grads = np.zeros(4)
-                        for i in range(4):
-                            p_hi = np.array(popt); p_hi[i] += eps
-                            p_lo = np.array(popt); p_lo[i] -= eps
-                            ct_hi = inverse_four_pl(threshold, *p_hi)
-                            ct_lo = inverse_four_pl(threshold, *p_lo)
-                            grads[i] = (ct_hi - ct_lo) / (2*eps)
-                        ct_var = float(np.dot(grads.T, np.dot(pcov, grads)))
-                        ct_std = np.sqrt(ct_var) if ct_var >= 0 else np.nan
-                        return float(ct), float(ct_std)
-                    return float(ct)
-        except Exception:
-            pass  # fall through to interpolation
-
-    # Fallback: interpolate crossing within [x_fit[0], x_fit[-1]]
-    if scale == 'linear':
-        above = y_fit > threshold
-        if not np.any(above):
-            return (None, None) if return_std else None
-        idx = int(np.argmax(above))
-        if idx == 0:
-            ct = float(x_fit[0])
-        else:
-            x1, x2 = x_fit[idx-1], x_fit[idx]
-            y1, y2 = y_fit[idx-1], y_fit[idx]
-            if y2 == y1:
-                return (None, None) if return_std else None
-            ct = x1 + (threshold - y1) * (x2 - x1) / (y2 - y1)
-        return (float(ct), None) if return_std else float(ct)
-
-    elif scale == 'log':
-        if (threshold is None) or (not np.isfinite(threshold)) or (threshold <= 0):
-            return (None, None) if return_std else None
-        pos = y_fit > 0
-        if np.count_nonzero(pos) < 2:
-            return (None, None) if return_std else None
-        xf = x_fit[pos]
-        yf_log = np.log10(y_fit[pos])
-        thr_log = np.log10(threshold)
-        above = yf_log > thr_log
-        if not np.any(above):
-            return (None, None) if return_std else None
-        idx = int(np.argmax(above))
-        if idx == 0:
-            ct = float(xf[0])
-        else:
-            x1, x2 = xf[idx-1], xf[idx]
-            y1, y2 = yf_log[idx-1], yf_log[idx]
-            if y2 == y1:
-                return (None, None) if return_std else None
-            ct = x1 + (thr_log - y1) * (x2 - x1) / (y2 - y1)
-        return (float(ct), None) if return_std else float(ct)
-
+    if y[len(y)-1] - y[0] <= 0.1:
+        return (None, None) if return_std else (None)
+    
     else:
-        raise ValueError("scale must be 'linear' or 'log'")
+            
+        # drop NaNs
+        valid = np.isfinite(x) & np.isfinite(y)
+        x, y = x[valid], y[valid]
+        if x.size < 3:
+            return (None, None) if return_std else None
+    
+        # ensure x ascending
+        order = np.argsort(x)
+        x, y = x[order], y[order]
+    
+        # restrict to x >= startpoint (hard guarantee)
+        post = x >= startpoint
+        if np.count_nonzero(post) < 2:
+            return (None, None) if return_std else None
+        x_fit, y_fit = x[post], y[post]
+    
+        # 4PL first (optional)
+        if use_4pl:
+            try:
+                if x_fit.size >= 5:
+                    popt, pcov = curve_fit(four_param_logistic, x_fit, y_fit, maxfev=10000)
+                    ct = inverse_four_pl(threshold, *popt)
+                    if (ct is not None) and (x_fit[0] <= ct <= x_fit[-1]):
+                        if return_std:
+                            eps = 1e-8
+                            grads = np.zeros(4)
+                            for i in range(4):
+                                p_hi = np.array(popt); p_hi[i] += eps
+                                p_lo = np.array(popt); p_lo[i] -= eps
+                                ct_hi = inverse_four_pl(threshold, *p_hi)
+                                ct_lo = inverse_four_pl(threshold, *p_lo)
+                                grads[i] = (ct_hi - ct_lo) / (2*eps)
+                            ct_var = float(np.dot(grads.T, np.dot(pcov, grads)))
+                            ct_std = np.sqrt(ct_var) if ct_var >= 0 else np.nan
+                            return float(ct), float(ct_std)
+                        return float(ct)
+            except Exception:
+                pass  # fall through to interpolation
+    
+        # Fallback: interpolate crossing within [x_fit[0], x_fit[-1]]
+        if scale == 'linear':
+            above = y_fit > threshold
+            if not np.any(above):
+                return (None, None) if return_std else None
+            idx = int(np.argmax(above))
+            if idx == 0:
+                ct = float(x_fit[0])
+            else:
+                x1, x2 = x_fit[idx-1], x_fit[idx]
+                y1, y2 = y_fit[idx-1], y_fit[idx]
+                if y2 == y1:
+                    return (None, None) if return_std else None
+                ct = x1 + (threshold - y1) * (x2 - x1) / (y2 - y1)
+            return (float(ct), None) if return_std else float(ct)
+    
+        elif scale == 'log':
+            if (threshold is None) or (not np.isfinite(threshold)) or (threshold <= 0):
+                return (None, None) if return_std else None
+            pos = y_fit > 0
+            if np.count_nonzero(pos) < 2:
+                return (None, None) if return_std else None
+            xf = x_fit[pos]
+            yf_log = np.log10(y_fit[pos])
+            thr_log = np.log10(threshold)
+            above = yf_log > thr_log
+            if not np.any(above):
+                return (None, None) if return_std else None
+            idx = int(np.argmax(above))
+            if idx == 0:
+                ct = float(xf[0])
+            else:
+                x1, x2 = xf[idx-1], xf[idx]
+                y1, y2 = yf_log[idx-1], yf_log[idx]
+                if y2 == y1:
+                    return (None, None) if return_std else None
+                ct = x1 + (thr_log - y1) * (x2 - x1) / (y2 - y1)
+            return (float(ct), None) if return_std else float(ct)
+    
+        else:
+            raise ValueError("scale must be 'linear' or 'log'")
+
 
 
 def find_threshold_for_target_ct_multi(
