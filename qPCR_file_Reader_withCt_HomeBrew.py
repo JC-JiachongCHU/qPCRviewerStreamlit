@@ -1954,32 +1954,81 @@ def deconvolve_biorad_plate_no_rox(channel_dfs: dict, B: np.ndarray):
     Source cols in B:   [FAM, HEX, TAMRA, CY5, CY55]
 
     Missing uploaded detector channels are assumed zero.
+    Missing wells inside a channel are also assumed zero.
+    Column order differences are tolerated.
     """
     req = ["FAM", "HEX", "ROX", "CY5", "CY55"]
 
     if not channel_dfs:
         raise ValueError("No channel data uploaded.")
 
-    ref_df = next(iter(channel_dfs.values())).copy()
-    well_cols = get_well_columns_from_df(ref_df)
-    meta_cols = [c for c in ref_df.columns if c not in well_cols]
+    # choose a reference df just to carry metadata columns like Cycle
+    ref_key = next(iter(channel_dfs.keys()))
+    ref_df = channel_dfs[ref_key].copy()
+
+    # metadata columns = anything not a well
+    ref_well_cols = set(get_well_columns_from_df(ref_df))
+    meta_cols = [c for c in ref_df.columns if c not in ref_well_cols]
+
+    # build union of all well columns across uploaded channels
+    all_well_cols = set()
+    for df in channel_dfs.values():
+        all_well_cols.update(get_well_columns_from_df(df))
+
+    # sort wells in plate order
+    def _well_sort_key(w):
+        m = re.fullmatch(r'^([A-P])(\d{1,2})$', str(w).strip(), flags=re.I)
+        if not m:
+            return ("Z", 999)
+        return (m.group(1).upper(), int(m.group(2)))
+
+    well_cols = sorted(all_well_cols, key=_well_sort_key)
 
     B_inv = np.linalg.inv(B)
 
+    n_rows = len(ref_df)
     Y_list = []
     missing_channels = []
+    missing_wells_by_channel = {}
 
     for k in req:
-        if k in channel_dfs:
-            cur_df = channel_dfs[k]
-            if list(cur_df.columns) != list(ref_df.columns):
-                raise ValueError(f"Column mismatch in channel {k}. All uploaded CSVs must have the same structure.")
-            Y_list.append(cur_df[well_cols].to_numpy(dtype=float))
-        else:
+        if k not in channel_dfs:
             missing_channels.append(k)
-            Y_list.append(np.zeros((len(ref_df), len(well_cols))))
+            Y_list.append(np.zeros((n_rows, len(well_cols)), dtype=float))
+            continue
 
-    Y = np.stack(Y_list, axis=0)  # (5, cycles, wells)
+        df = channel_dfs[k].copy()
+
+        # copy metadata from ref if missing
+        for mc in meta_cols:
+            if mc not in df.columns and mc in ref_df.columns:
+                df[mc] = ref_df[mc]
+
+        # align row count
+        if len(df) != n_rows:
+            raise ValueError(
+                f"Row count mismatch in channel {k}: got {len(df)} rows, expected {n_rows}. "
+                "All uploaded CSVs must have the same number of cycle rows."
+            )
+
+        # add missing wells as zero
+        present_wells = set(get_well_columns_from_df(df))
+        missing_wells = [w for w in well_cols if w not in present_wells]
+        if missing_wells:
+            missing_wells_by_channel[k] = missing_wells
+            for w in missing_wells:
+                df[w] = 0.0
+
+        # reorder wells consistently
+        df_block = df[well_cols].copy()
+
+        # force numeric
+        for c in well_cols:
+            df_block[c] = pd.to_numeric(df_block[c], errors="coerce").fillna(0.0)
+
+        Y_list.append(df_block.to_numpy(dtype=float))
+
+    Y = np.stack(Y_list, axis=0)  # shape (5, n_cycles, n_wells)
     X = np.einsum("ij,jkl->ikl", B_inv, Y)
 
     out = {}
@@ -1989,7 +2038,7 @@ def deconvolve_biorad_plate_no_rox(channel_dfs: dict, B: np.ndarray):
         df_out[well_cols] = X[i]
         out[name] = df_out
 
-    return out, B_inv, missing_channels
+    return out, B_inv, missing_channels, missing_wells_by_channel
 
 def make_unity_ref_df(template_df: pd.DataFrame) -> pd.DataFrame:
     df = template_df.copy()
@@ -2123,11 +2172,23 @@ if channel_dfs:
                     )
                 )
 
-                working_channel_dfs, B_inv, missing_deconv_channels = deconvolve_biorad_plate_no_rox(channel_dfs, B_deconv)
+                working_channel_dfs, B_inv, missing_deconv_channels, missing_wells_by_channel = deconvolve_biorad_plate_no_rox(channel_dfs, B_deconv)
 
                 st.success("Deconvolution applied. Downstream workflow will use deconvolved FAM / HEX / TAMRA / CY5 / CY55.")
+                
                 if missing_deconv_channels:
                     st.warning(f"Missing detector channels assumed zero during deconvolution: {missing_deconv_channels}")
+                
+                if missing_wells_by_channel:
+                    msg_lines = []
+                    for ch, wells in missing_wells_by_channel.items():
+                        preview = ", ".join(wells[:8])
+                        more = "" if len(wells) <= 8 else f" ... (+{len(wells)-8} more)"
+                        msg_lines.append(f"{ch}: {preview}{more}")
+                    st.warning(
+                        "Some uploaded channels were missing well columns; those wells were assumed zero.\n\n"
+                        + "\n".join(msg_lines)
+                    )
 
                 with st.expander("Show inverse matrix used"):
                     st.dataframe(
