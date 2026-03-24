@@ -1243,6 +1243,8 @@
 #             st.dataframe(plate_df.style.format("{:.2f}").background_gradient(axis=None), use_container_width=True)
 
 #             # download
+#             csv_bytes = plate_df.to_csv(index=True).encode("utf-8")
+#             st.download_button("Download Ct plate (CSV)", data=csv_bytes, file_name=f"Ct_{target_chan}.csv", mime="text/csv")
 
 
 import streamlit as st
@@ -1556,11 +1558,17 @@ def spr_QSqpcr_background_dY_v5(
 
     sigma = np.full(n, float(std))
 
+    # if y[len(y)-1] - y[0] <= 0.1:
+    #     if returnbase:
+    #         return y-y, -2, 0, len(y)-1, 0, np.full(n, 0), y - 0
+    #     else:
+    #         return y-7, -2, 0, len(y)-1, 0
     if y[len(y)-1] - y[0] <= 0.1:
-        if returnbase:
-            return y-y, -2, 0, len(y)-1, 0, np.full(n, 0), y - 0
-        else:
-            return y-7, -2, 0, len(y)-1, 0
+            base = np.nanmean(y[startcycle:startcycle + window_size])
+            if returnbase:
+                return y - base, -2, 0, len(y)-1, base, np.full(n, base), y - base
+            else:
+                return y - base, -2, 0, len(y)-1, base
     else:
         for i in range(startcycle + 1, n - window_size - 2):
             Sn[i]   = y[i + window_size] - y[i]
@@ -2293,7 +2301,11 @@ else:
         "Apply extra leak correction term (target + α·leak) before background fitting?",
         value=False
     )
+        
 
+    raw_target_df = channel_dfs.get(target_chan)
+    raw_target_wells = set(get_well_columns_from_df(raw_target_df)) if raw_target_df is not None else set()
+        
     leaking_chan = None
     alpha = 0.0
     if use_leak_correction:
@@ -2433,6 +2445,10 @@ else:
         for r in rows_sorted:
             for c in cols_sorted:
                 well = f"{r}{c}"
+                if well not in raw_target_wells:
+                    Ct_plate[well] = None
+                    continue
+                
                 if (well not in target_df.columns) or (well not in passive_ref_df.columns):
                     Ct_plate[well] = None
                     continue
@@ -2473,7 +2489,7 @@ else:
         passive_cols = {c.strip() for c in passive_ref_df.columns}
         leak_cols = {c.strip() for c in (leaking_df.columns if (use_leak_correction and leaking_df is not None) else [])}
 
-        present_well_set = target_cols & passive_cols
+        present_well_set = (target_cols & passive_cols) & raw_target_wells
         present_wells = sorted(
             [w for w in present_well_set if re.fullmatch(r'^[A-P](\d{1,2})$', w, flags=re.I)],
             key=lambda x: (x[0].upper(), int(x[1:]))
@@ -2600,5 +2616,3 @@ else:
             file_name=f"Ct_{safe_target}.csv",
             mime="text/csv"
         )
-#             csv_bytes = plate_df.to_csv(index=True).encode("utf-8")
-#             st.download_button("Download Ct plate (CSV)", data=csv_bytes, file_name=f"Ct_{target_chan}.csv", mime="text/csv")
