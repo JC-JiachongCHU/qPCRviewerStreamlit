@@ -830,7 +830,7 @@ def make_unity_ref_df(template_df: pd.DataFrame) -> pd.DataFrame:
 # =========================================================
 # App header
 # =========================================================
-version = "v2.1.0"
+version = "v2.2.0"
 
 st.set_page_config(layout="wide")
 st.title("qPCR homebrew - Supports Bio-Rad")
