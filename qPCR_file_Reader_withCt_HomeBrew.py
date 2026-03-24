@@ -1885,6 +1885,7 @@ def _load_wells_into_editor(wells: list[str], rows, cols, state_key="group_edito
 # =========================================================
 # Bio-Rad deconvolution helpers
 # =========================================================
+
 DEFAULT_BIORAD_MATRIX_TEXT = """1.0000,-0.0003,-0.3720,0.0080,0.0006
 0.0019,1.0000,2.2505,0.0016,0.0006
 0.0003,0.0175,1.0000,0.0028,0.0019
@@ -1956,34 +1957,57 @@ def load_deconv_matrix_from_file(file_obj) -> np.ndarray:
 
     raise ValueError("Could not parse a 5×5 matrix from the uploaded file.")
 
-def deconvolve_biorad_plate_no_rox(channel_dfs: dict, B: np.ndarray):
+def compute_detector_backgrounds_from_blank_wells(
+    channel_dfs: dict,
+    bg_wells: list[str],
+    c0: int = 5,
+    c1: int = 20,
+) -> dict[str, float]:
+    """
+    Compute one scalar background per detector channel from user-defined blank wells.
+    This matches the calibration logic much better than inverting raw traces directly.
+    """
+    bg = {}
+    for ch, df in channel_dfs.items():
+        vals = []
+        for well in bg_wells:
+            if well in df.columns:
+                arr = pd.to_numeric(df[well], errors="coerce").to_numpy(dtype=float)
+                if len(arr) >= c1:
+                    vals.append(arr[c0:c1])
+        bg[ch] = float(np.nanmedian(np.concatenate(vals))) if vals else 0.0
+    return bg
+
+def deconvolve_biorad_plate_no_rox(
+    channel_dfs: dict,
+    B: np.ndarray,
+    bg_vals: dict[str, float] | None = None,
+):
     """
     Detector rows in B: [FAM, HEX, ROX, CY5, CY55]
     Source cols in B:   [FAM, HEX, TAMRA, CY5, CY55]
 
-    Missing uploaded detector channels are assumed zero.
-    Missing wells inside a channel are also assumed zero.
-    Column order differences are tolerated.
+    IMPORTANT:
+    - Uploaded ROX is treated as the TAMRA detector in this mode.
+    - Matrix inverse is applied to background-subtracted detector traces.
+    - Missing uploaded detector channels are assumed zero.
+    - Missing wells inside a channel are assumed zero.
     """
     req = ["FAM", "HEX", "ROX", "CY5", "CY55"]
 
     if not channel_dfs:
         raise ValueError("No channel data uploaded.")
 
-    # choose a reference df just to carry metadata columns like Cycle
     ref_key = next(iter(channel_dfs.keys()))
     ref_df = channel_dfs[ref_key].copy()
 
-    # metadata columns = anything not a well
     ref_well_cols = set(get_well_columns_from_df(ref_df))
     meta_cols = [c for c in ref_df.columns if c not in ref_well_cols]
 
-    # build union of all well columns across uploaded channels
     all_well_cols = set()
     for df in channel_dfs.values():
         all_well_cols.update(get_well_columns_from_df(df))
 
-    # sort wells in plate order
     def _well_sort_key(w):
         m = re.fullmatch(r'^([A-P])(\d{1,2})$', str(w).strip(), flags=re.I)
         if not m:
@@ -2007,19 +2031,16 @@ def deconvolve_biorad_plate_no_rox(channel_dfs: dict, B: np.ndarray):
 
         df = channel_dfs[k].copy()
 
-        # copy metadata from ref if missing
         for mc in meta_cols:
             if mc not in df.columns and mc in ref_df.columns:
                 df[mc] = ref_df[mc]
 
-        # align row count
         if len(df) != n_rows:
             raise ValueError(
                 f"Row count mismatch in channel {k}: got {len(df)} rows, expected {n_rows}. "
                 "All uploaded CSVs must have the same number of cycle rows."
             )
 
-        # add missing wells as zero
         present_wells = set(get_well_columns_from_df(df))
         missing_wells = [w for w in well_cols if w not in present_wells]
         if missing_wells:
@@ -2027,16 +2048,15 @@ def deconvolve_biorad_plate_no_rox(channel_dfs: dict, B: np.ndarray):
             for w in missing_wells:
                 df[w] = 0.0
 
-        # reorder wells consistently
         df_block = df[well_cols].copy()
+        bg_val = 0.0 if bg_vals is None else float(bg_vals.get(k, 0.0))
 
-        # force numeric
         for c in well_cols:
-            df_block[c] = pd.to_numeric(df_block[c], errors="coerce").fillna(0.0)
+            df_block[c] = pd.to_numeric(df_block[c], errors="coerce").fillna(0.0) - bg_val
 
         Y_list.append(df_block.to_numpy(dtype=float))
 
-    Y = np.stack(Y_list, axis=0)  # shape (5, n_cycles, n_wells)
+    Y = np.stack(Y_list, axis=0)  # shape = (5, n_cycles, n_wells)
     X = np.einsum("ij,jkl->ikl", B_inv, Y)
 
     out = {}
@@ -2164,7 +2184,27 @@ if channel_dfs:
                 height=140,
                 key="deconv_matrix_text"
             )
+            st.subheader("Detector background for deconvolution")
 
+            c_bg1, c_bg2, c_bg3, c_bg4, c_bg5 = st.columns(5)
+            with c_bg1:
+                fam_bg_manual = st.number_input("FAM bg", value=3178.979, format="%.3f")
+            with c_bg2:
+                hex_bg_manual = st.number_input("HEX bg", value=2025.254, format="%.3f")
+            with c_bg3:
+                rox_bg_manual = st.number_input("ROX bg", value=2048.373, format="%.3f")
+            with c_bg4:
+                cy5_bg_manual = st.number_input("CY5 bg", value=1715.456, format="%.3f")
+            with c_bg5:
+                cy55_bg_manual = st.number_input("CY55 bg", value=2064.234, format="%.3f")
+        
+            bg_vals_for_deconv = {
+                "FAM": fam_bg_manual,
+                "HEX": hex_bg_manual,
+                "ROX": rox_bg_manual,
+                "CY5": cy5_bg_manual,
+                "CY55": cy55_bg_manual,
+            }
             try:
                 if matrix_file is not None:
                     B_deconv = load_deconv_matrix_from_file(matrix_file)
@@ -2180,7 +2220,11 @@ if channel_dfs:
                     )
                 )
 
-                working_channel_dfs, B_inv, missing_deconv_channels, missing_wells_by_channel = deconvolve_biorad_plate_no_rox(channel_dfs, B_deconv)
+                working_channel_dfs, B_inv, missing_deconv_channels, missing_wells_by_channel = deconvolve_biorad_plate_no_rox(
+                    channel_dfs,
+                    B_deconv,
+                    bg_vals=bg_vals_for_deconv,
+                )
 
                 st.success("Deconvolution applied. Downstream workflow will use deconvolved FAM / HEX / TAMRA / CY5 / CY55.")
                 
@@ -2342,11 +2386,13 @@ else:
     cols_sorted = full_cols
     selected_wells_plate = [[f"{r}{c}" for c in cols_sorted] for r in rows_sorted]
 
-    def _present_wells(grid, target_df, passive_ref_df, leaking_df=None):
+    def _present_wells(grid, target_df, passive_ref_df, raw_target_wells, leaking_df=None):
         out = []
         for row in grid:
             ok = []
             for w in row:
+                if w not in raw_target_wells:
+                    continue
                 if (w in target_df.columns) and (w in passive_ref_df.columns):
                     ok.append(w)
             if ok:
@@ -2354,11 +2400,12 @@ else:
         return out
 
     present_wells = _present_wells(
-        selected_wells_plate,
-        target_df,
-        passive_ref_df,
-        leaking_df if use_leak_correction else None
-    )
+            selected_wells_plate,
+            target_df,
+            passive_ref_df,
+            raw_target_wells,
+            leaking_df if use_leak_correction else None
+        )
 
     if not present_wells:
         st.error("No overlapping well columns in the selected channels.")
@@ -2379,8 +2426,14 @@ else:
 
     st.subheader("Pick qPOS/reference wells & target Ct → find threshold")
 
-    all_well_flat = [w for row in selected_wells_plate for w in row]
-    qpos_wells = st.multiselect("qPOS / reference wells", all_well_flat, default=all_well_flat[:2])
+    all_well_flat = sorted(raw_target_wells, key=lambda x: (x[0], int(x[1:])))
+    qpos_default = all_well_flat[:2] if len(all_well_flat) >= 2 else all_well_flat
+
+    qpos_wells = st.multiselect(
+            "qPOS / reference wells",
+            all_well_flat,
+            default=qpos_default
+        )
     target_ct = st.number_input(
         "Target Ct (avg over qPOS)",
         min_value=0.0,
@@ -2473,6 +2526,9 @@ else:
                     StepIndY=int(StepIndY_to_use),
                     returnbase=False
                 )
+                if np.nanmax(y_bg) < threshold_Ct:
+                    Ct_plate[well] = None
+                    continue
                 ct_val, _ = calculate_ct(
                     cycles,
                     y_bg,
