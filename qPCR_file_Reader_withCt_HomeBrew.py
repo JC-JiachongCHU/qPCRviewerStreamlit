@@ -907,7 +907,8 @@ signal_mode = st.radio(
     "Bio-Rad signal mode",
     [
         "Without ROX normalization (ROX detector = TAMRA)",
-        "With ROX normalization (no TAMRA)"
+        "With ROX normalization (no TAMRA)",
+        "ROX as probe (no normalization; no ROX decon for now)"
     ],
     horizontal=True,
     index=0
@@ -949,7 +950,7 @@ if channel_dfs:
                 cy5_bg_manual = st.number_input("CY5 bg", value=1715.456, format="%.3f")
             with c_bg5:
                 cy55_bg_manual = st.number_input("CY55 bg", value=2064.234, format="%.3f")
-        
+
             bg_vals_for_deconv = {
                 "FAM": fam_bg_manual,
                 "HEX": hex_bg_manual,
@@ -957,6 +958,7 @@ if channel_dfs:
                 "CY5": cy5_bg_manual,
                 "CY55": cy55_bg_manual,
             }
+
             try:
                 if matrix_file is not None:
                     B_deconv = load_deconv_matrix_from_file(matrix_file)
@@ -979,10 +981,10 @@ if channel_dfs:
                 )
 
                 st.success("Deconvolution applied. Downstream workflow will use deconvolved FAM / HEX / TAMRA / CY5 / CY55.")
-                
+
                 if missing_deconv_channels:
                     st.warning(f"Missing detector channels assumed zero during deconvolution: {missing_deconv_channels}")
-                
+
                 if missing_wells_by_channel:
                     msg_lines = []
                     for ch, wells in missing_wells_by_channel.items():
@@ -1007,9 +1009,15 @@ if channel_dfs:
                 st.error(f"Failed to apply deconvolution: {e}")
                 working_channel_dfs = channel_dfs.copy()
                 deconv_enabled = False
-    else:
+
+    elif signal_mode.startswith("With ROX normalization"):
         st.caption("In this mode, there is no TAMRA channel. ROX is used as passive reference for normalization.")
         working_channel_dfs = channel_dfs.copy()
+
+    else:
+        st.caption("In this mode, ROX is treated as a regular probe channel. No ROX normalization is used, and ROX deconvolution with other channels is temporarily set to 0.")
+        working_channel_dfs = channel_dfs.copy()
+        deconv_enabled = False
 
 
 # =========================================================
@@ -1066,11 +1074,19 @@ else:
         ref_choices = ["NONE"]
         default_target = "FAM" if "FAM" in chan_opts else (chan_opts[0] if chan_opts else None)
         default_ref = "NONE"
-    else:
+    
+    elif signal_mode.startswith("With ROX normalization"):
         chan_opts = [c for c in sorted(working_channel_dfs.keys()) if c != "ROX"]
         ref_choices = ["ROX", "NONE"] if "ROX" in working_channel_dfs else ["NONE"]
         default_target = "FAM" if "FAM" in chan_opts else (chan_opts[0] if chan_opts else None)
         default_ref = "ROX" if "ROX" in ref_choices else "NONE"
+    
+    else:
+        # ROX as probe
+        chan_opts = [c for c in sorted(working_channel_dfs.keys()) if c in {"FAM", "HEX", "ROX", "CY5", "CY55"}]
+        ref_choices = ["NONE"]
+        default_target = "ROX" if "ROX" in chan_opts else ("FAM" if "FAM" in chan_opts else (chan_opts[0] if chan_opts else None))
+        default_ref = "NONE"
 
     if not chan_opts:
         st.error("No usable target channels found.")
@@ -1090,7 +1106,7 @@ else:
             index=ref_choices.index(default_ref) if default_ref in ref_choices else 0
         )
 
-    if signal_mode.startswith("Without ROX"):
+    if signal_mode.startswith("Without ROX") or signal_mode.startswith("ROX as probe"):
         st.caption("Recommended in this mode: passive reference = NONE.")
 
     use_leak_correction = st.checkbox(
