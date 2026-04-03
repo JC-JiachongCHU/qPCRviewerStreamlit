@@ -645,6 +645,13 @@ DEFAULT_BIORAD_MATRIX_TEXT = """1.0000,-0.0003,-0.3720,0.0080,0.0006
 -0.0003,-0.0005,0.0105,0.1215,1.0000
 """
 
+DEFAULT_BIORAD_MATRIX_TEXT_ROX_PROBE = """1.0000,-0.0003,0.0000,0.0080,0.0006
+0.0019,1.0000,0.0000,0.0016,0.0006
+0.0000,0.0000,1.0000,0.0000,0.0000
+-0.0004,-0.0006,0.0000,1.0000,-0.0547
+-0.0003,-0.0005,0.0000,0.1215,1.0000
+"""
+
 def normalize_chan_key(raw_chan: str) -> str:
     s = re.sub(r'[^A-Za-z0-9]+', '', str(raw_chan)).upper()
     if s == "CY5":
@@ -820,6 +827,97 @@ def deconvolve_biorad_plate_no_rox(
 
     return out, B_inv, missing_channels, missing_wells_by_channel
 
+def deconvolve_biorad_plate_rox_probe(
+    channel_dfs: dict,
+    B: np.ndarray,
+    bg_vals: dict[str, float] | None = None,
+):
+    """
+    ROX is treated as a probe channel, not passive reference.
+
+    Detector rows in B: [FAM, HEX, ROX, CY5, CY55]
+    Source cols in B:   [FAM, HEX, ROX, CY5, CY55]
+
+    Current intended behavior:
+    - ROX to/from all other channels = 0
+    - FAM/HEX/CY5/CY55 deconvolve against each other as usual
+    - ROX passes through unchanged except for optional detector background subtraction
+    """
+    req = ["FAM", "HEX", "ROX", "CY5", "CY55"]
+
+    if not channel_dfs:
+        raise ValueError("No channel data uploaded.")
+
+    ref_key = next(iter(channel_dfs.keys()))
+    ref_df = channel_dfs[ref_key].copy()
+
+    ref_well_cols = set(get_well_columns_from_df(ref_df))
+    meta_cols = [c for c in ref_df.columns if c not in ref_well_cols]
+
+    all_well_cols = set()
+    for df in channel_dfs.values():
+        all_well_cols.update(get_well_columns_from_df(df))
+
+    def _well_sort_key(w):
+        m = re.fullmatch(r'^([A-P])(\d{1,2})$', str(w).strip(), flags=re.I)
+        if not m:
+            return ("Z", 999)
+        return (m.group(1).upper(), int(m.group(2)))
+
+    well_cols = sorted(all_well_cols, key=_well_sort_key)
+
+    B_inv = np.linalg.inv(B)
+
+    n_rows = len(ref_df)
+    Y_list = []
+    missing_channels = []
+    missing_wells_by_channel = {}
+
+    for k in req:
+        if k not in channel_dfs:
+            missing_channels.append(k)
+            Y_list.append(np.zeros((n_rows, len(well_cols)), dtype=float))
+            continue
+
+        df = channel_dfs[k].copy()
+
+        for mc in meta_cols:
+            if mc not in df.columns and mc in ref_df.columns:
+                df[mc] = ref_df[mc]
+
+        if len(df) != n_rows:
+            raise ValueError(
+                f"Row count mismatch in channel {k}: got {len(df)} rows, expected {n_rows}. "
+                "All uploaded CSVs must have the same number of cycle rows."
+            )
+
+        present_wells = set(get_well_columns_from_df(df))
+        missing_wells = [w for w in well_cols if w not in present_wells]
+        if missing_wells:
+            missing_wells_by_channel[k] = missing_wells
+            for w in missing_wells:
+                df[w] = 0.0
+
+        df_block = df[well_cols].copy()
+        bg_val = 0.0 if bg_vals is None else float(bg_vals.get(k, 0.0))
+
+        for c in well_cols:
+            df_block[c] = pd.to_numeric(df_block[c], errors="coerce").fillna(0.0) - bg_val
+
+        Y_list.append(df_block.to_numpy(dtype=float))
+
+    Y = np.stack(Y_list, axis=0)  # shape = (5, n_cycles, n_wells)
+    X = np.einsum("ij,jkl->ikl", B_inv, Y)
+
+    out = {}
+    out_names = ["FAM", "HEX", "ROX", "CY5", "CY55"]
+    for i, name in enumerate(out_names):
+        df_out = ref_df[meta_cols].copy()
+        df_out[well_cols] = X[i]
+        out[name] = df_out
+
+    return out, B_inv, missing_channels, missing_wells_by_channel
+    
 def make_unity_ref_df(template_df: pd.DataFrame) -> pd.DataFrame:
     df = template_df.copy()
     for c in get_well_columns_from_df(df):
@@ -1014,10 +1112,103 @@ if channel_dfs:
         st.caption("In this mode, there is no TAMRA channel. ROX is used as passive reference for normalization.")
         working_channel_dfs = channel_dfs.copy()
 
-    else:
-        st.caption("In this mode, ROX is treated as a regular probe channel. No ROX normalization is used, and ROX deconvolution with other channels is temporarily set to 0.")
-        working_channel_dfs = channel_dfs.copy()
-        deconv_enabled = False
+    elif signal_mode.startswith("ROX as probe"):
+        st.caption("In this mode, ROX is treated as a regular probe channel. ROX-to/from-other-channel deconvolution is set to 0, while FAM/HEX/CY5/CY55 still deconvolve against each other.")
+    
+        deconv_enabled = st.checkbox(
+            "Apply deconvolution matrix before Ct workflow",
+            value=True,
+            help="ROX is isolated for now. Other probe channels still deconvolve against each other."
+        )
+    
+        if deconv_enabled:
+            matrix_file = st.file_uploader(
+                "Upload deconvolution matrix (.csv or .xlsx)",
+                type=["csv", "xlsx"],
+                key="deconv_matrix_upload_rox_probe"
+            )
+    
+            matrix_text = st.text_area(
+                "Or paste 5×5 matrix here",
+                value=DEFAULT_BIORAD_MATRIX_TEXT_ROX_PROBE,
+                height=140,
+                key="deconv_matrix_text_rox_probe"
+            )
+    
+            st.subheader("Detector background for deconvolution")
+    
+            c_bg1, c_bg2, c_bg3, c_bg4, c_bg5 = st.columns(5)
+            with c_bg1:
+                fam_bg_manual = st.number_input("FAM bg", value=3178.979, format="%.3f", key="roxprobe_fam_bg")
+            with c_bg2:
+                hex_bg_manual = st.number_input("HEX bg", value=2025.254, format="%.3f", key="roxprobe_hex_bg")
+            with c_bg3:
+                rox_bg_manual = st.number_input("ROX bg", value=2048.373, format="%.3f", key="roxprobe_rox_bg")
+            with c_bg4:
+                cy5_bg_manual = st.number_input("CY5 bg", value=1715.456, format="%.3f", key="roxprobe_cy5_bg")
+            with c_bg5:
+                cy55_bg_manual = st.number_input("CY55 bg", value=2064.234, format="%.3f", key="roxprobe_cy55_bg")
+    
+            bg_vals_for_deconv = {
+                "FAM": fam_bg_manual,
+                "HEX": hex_bg_manual,
+                "ROX": rox_bg_manual,
+                "CY5": cy5_bg_manual,
+                "CY55": cy55_bg_manual,
+            }
+    
+            try:
+                if matrix_file is not None:
+                    B_deconv = load_deconv_matrix_from_file(matrix_file)
+                else:
+                    B_deconv = parse_matrix_from_text(matrix_text)
+    
+                st.write("Loaded deconvolution matrix:")
+                st.dataframe(
+                    pd.DataFrame(
+                        B_deconv,
+                        index=["FAM", "HEX", "ROX", "CY5", "CY55"],
+                        columns=["FAM", "HEX", "ROX", "CY5", "CY55"]
+                    )
+                )
+    
+                working_channel_dfs, B_inv, missing_deconv_channels, missing_wells_by_channel = deconvolve_biorad_plate_rox_probe(
+                    channel_dfs,
+                    B_deconv,
+                    bg_vals=bg_vals_for_deconv,
+                )
+    
+                st.success("Deconvolution applied. ROX is treated as an independent probe channel.")
+    
+                if missing_deconv_channels:
+                    st.warning(f"Missing detector channels assumed zero during deconvolution: {missing_deconv_channels}")
+    
+                if missing_wells_by_channel:
+                    msg_lines = []
+                    for ch, wells in missing_wells_by_channel.items():
+                        preview = ", ".join(wells[:8])
+                        more = "" if len(wells) <= 8 else f" ... (+{len(wells)-8} more)"
+                        msg_lines.append(f"{ch}: {preview}{more}")
+                    st.warning(
+                        "Some uploaded channels were missing well columns; those wells were assumed zero.\n\n"
+                        + "\n".join(msg_lines)
+                    )
+    
+                with st.expander("Show inverse matrix used"):
+                    st.dataframe(
+                        pd.DataFrame(
+                            B_inv,
+                            index=["FAM", "HEX", "ROX", "CY5", "CY55"],
+                            columns=["FAM", "HEX", "ROX", "CY5", "CY55"]
+                        )
+                    )
+    
+            except Exception as e:
+                st.error(f"Failed to apply deconvolution: {e}")
+                working_channel_dfs = channel_dfs.copy()
+                deconv_enabled = False
+        else:
+            working_channel_dfs = channel_dfs.copy()
 
 
 # =========================================================
